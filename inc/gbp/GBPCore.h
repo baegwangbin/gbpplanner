@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #pragma once 
 #include <memory>
@@ -29,7 +29,6 @@ void iterateGBP(int n_iters, MsgPassingMode msg_passing_mode, std::map<int, std:
 template <typename T>
 void iterateGBP(int n_iters, MsgPassingMode msg_passing_mode, std::map<int, std::shared_ptr<T>>& factorgraphs){
     for (int i=0; i<n_iters; i++){
-#pragma omp parallel for
         // Iterate through robots
         for (int r_idx=0; r_idx<factorgraphs.size(); r_idx++){
             auto it_r = factorgraphs.begin(); std::advance(it_r, r_idx);
@@ -37,7 +36,6 @@ void iterateGBP(int n_iters, MsgPassingMode msg_passing_mode, std::map<int, std:
             factorgraph->factorIteration(msg_passing_mode);
         }
     
-#pragma omp parallel for
         // Iterate through robots
         for (int r_idx=0; r_idx<factorgraphs.size(); r_idx++){
             auto it_r = factorgraphs.begin(); std::advance(it_r, r_idx);

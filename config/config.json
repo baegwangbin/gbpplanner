@@ -4,7 +4,7 @@
   
   "#": "Display parameters",
   "DISPLAY": 1,
-  "WORLD_SZ": 100,
+  "WORLD_SZ": 10,
   "SCREEN_SZ": 1000,
   "DRAW_INTERROBOT": 0,
   "DRAW_PATH": 0,

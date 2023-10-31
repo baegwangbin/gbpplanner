@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #include <Graphics.h>
 
@@ -17,11 +17,9 @@ Graphics::Graphics(Image obstacleImg) : obstacleImg_(ImageCopy(obstacleImg)){
 
     // Camera is defined by a forward vector (target - position), as well as an up vector (see raylib for more info)
     // These are vectors for each camera transition. Cycle through them in the simulation with the SPACEBAR
-    camera_positions_ = {Vector3{0.,1.f*globals.WORLD_SZ, 0.},
-                        (Vector3){20., 15, 20},
-                        (Vector3){ 0., 0.85f*globals.WORLD_SZ, 0.9f*globals.WORLD_SZ }};
-    camera_ups_ = {Vector3{0.,0.,-1.}, (Vector3){-0.325, 0.9, -0.316}, (Vector3){0.,0.,-1.}};
-    camera_targets_ = {Vector3{0.,0.,0.}, (Vector3){1.363, 0, 1.463}, (Vector3){0.,0.,0.}};
+    camera_positions_ = {Vector3{-0.5,1., -0.5}};
+    camera_ups_ = {Vector3{0.,1.,0.}};
+    camera_targets_ = {Vector3{1.,0.,1.}};
 
     camera3d.position = camera_positions_[camera_idx_];
     camera3d.target = camera_targets_[camera_idx_];
@@ -42,22 +40,26 @@ Graphics::Graphics(Image obstacleImg) : obstacleImg_(ImageCopy(obstacleImg)){
     SetShaderValue(lightShader_, ambientLoc, temp, SHADER_UNIFORM_VEC4);
 
     // Assign our lighting shader to robot model
-    robotModel_ = LoadModelFromMesh(GenMeshSphere(1., 50.0f, 50.0f));
-    robotModel_.materials[0].shader = lightShader_;
-    robotModel_.materials[0].maps[0].color = WHITE;
+    cameraModel_ = LoadModelFromMesh(GenMeshCone(1., -1., 4.));
+    cameraModel_.transform = MatrixMultiply(MatrixTranslate(0., -2., 0.),MatrixRotateXYZ(Vector3{90.f*DEG2RAD, 45.f*DEG2RAD, 0.f})) ;
+    cameraModel_.materials[0].shader = lightShader_;
+    cameraModel_.materials[0].maps[0].color = WHITE;
 
     // Height map
     Mesh mesh = GenMeshHeightmap(obstacleImg_, (Vector3){ 1.f*globals.WORLD_SZ, 1.f*globals.ROBOT_RADIUS, 1.f*globals.WORLD_SZ }); // Generate heightmap mesh (RAM and VRAM)
     ImageColorInvert(&obstacleImg_);                     // TEXTURE REQUIRES OBSTACLES ARE BLACK
-    texture_img_ = LoadTextureFromImage(obstacleImg_);  
-    groundModel_ = LoadModelFromMesh(mesh);                  // Load model from generated mesh
-    groundModel_.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = texture_img_; // Set map diffuse texture
-    groundModelpos_ = { -globals.WORLD_SZ/2.f, 0.0f, -globals.WORLD_SZ/2.f };           // Define model position
+    texture_img_ = LoadTextureFromImage(obstacleImg_); 
 
+    landmarkModel_ = LoadModelFromMesh(GenMeshSphere(1., 10.0f, 10.0f));               // Load model from generated mesh
+    landmarkModel_.materials[0].shader = lightShader_;
+    landmarkModel_.materials[0].maps[0].color = WHITE;
+
+    worldFrameAxisModel_ = LoadModelFromMesh(GenMeshCylinder(0.05, 0.5, 6.));
+    worldFrameAxisModel_.materials[0].maps[0].color = WHITE;    
     // Create lights
     Light lights[MAX_LIGHTS] = { 0 };
     Vector3 target = camera3d.target;
-    Vector3 position = Vector3{target.x+10,target.y+20,target.z+10};
+    Vector3 position = Vector3{target.x-10,target.y-20,target.z-10};
     lights[0] = CreateLight(LIGHT_POINT, position, target, LIGHTGRAY, lightShader_);                            
 }
 
@@ -71,7 +73,7 @@ Graphics::~Graphics(){
 /******************************************************************************************/
 void Graphics::update_camera()
 {
-    float zoomscale = IsKeyDown(KEY_LEFT_SHIFT) ? 100. :10.;
+    float zoomscale = IsKeyDown(KEY_LEFT_SHIFT) ? 1. :0.5;
     float zoom = -(float)GetMouseWheelMove() * zoomscale;
     CameraMoveToTarget(&camera3d, zoom);
     if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
@@ -90,9 +92,9 @@ void Graphics::update_camera()
             CameraMoveToTarget(&camera3d, zoom);
         } else {
             // Camera movement
-            CameraMoveRight(&camera3d, -del.x, true);
+            CameraMoveRight(&camera3d, -del.x*0.1, true);
             Vector3 D = GetCameraUp(&camera3d); D.y = 0.;
-            D = Vector3Scale(Vector3Normalize(D), del.y);
+            D = Vector3Scale(Vector3Normalize(D), del.y*0.1);
             camera3d.position = Vector3Add(camera3d.position, D);
             camera3d.target = Vector3Add(camera3d.target, D);
         }

@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #pragma once
 #include <cmath>
@@ -21,7 +21,7 @@ class Globals {
     // Basic parameters
     const char* WINDOW_TITLE = "Distributing Multirobot Motion Planning with Gaussian Belief Propogation";
     bool RUN = true;
-    std::string CONFIG_FILE = "../config/config.json";      // Default config file
+    std::string CONFIG_FILE = "/home/ap721/code/gbpplanner/config/config.json";      // Default config file
     std::string OBSTACLE_FILE;                              // Binary image for obstacles
     std::string ASSETS_DIR;                                 // Directory for Assets
     int N_DOFS = 4;                                         // Degrees of freedom (x, y, xdot, ydot)

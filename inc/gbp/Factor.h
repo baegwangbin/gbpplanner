@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #pragma once
 #include "Simulator.h"
@@ -8,6 +8,7 @@
 #include <Eigen/Core>
 #include <Utils.h>
 #include <gbp/GBPCore.h>
+#include <gbp/lie_algebra.h>
 
 #include <raylib.h>
 
@@ -46,7 +47,11 @@ class Factor {
         skip_flag = false;
         return skip_flag;
     };
+    double mahalanobis_threshold_ = 2.;
+    double sigma_;
+    bool robust_flag_ = false;
     std::vector<std::shared_ptr<Variable>> variables_{};    // Vector of pointers to the connected variables. Order of variables matters
+    bool active_ = true;
 
     
 
@@ -78,6 +83,22 @@ class Factor {
 // Create a new factor definition as shown with these examples.
 // You may create a new factor_type_, in the enum in Factor.h (optional, default type is DEFAULT_FACTOR)
 // Create a measurement function h_func_() and optionally Jacobian J_func_().
+
+/********************************************************************************************/
+/* Reprojection factor */
+/*****************************************************************************************************/
+class ReprojectionFactor: public Factor {
+    public:
+    Eigen::MatrixXd K_;
+
+    ReprojectionFactor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
+        float sigma, const Eigen::Vector2d& measurement, const Eigen::Matrix3d& K);
+
+    // Constant velocity model
+    Eigen::MatrixXd h_func_(const Eigen::VectorXd& X);
+    Eigen::MatrixXd J_func_(const Eigen::VectorXd& X);
+
+};
 
 /********************************************************************************************/
 /* Dynamics factor: constant-velocity model */

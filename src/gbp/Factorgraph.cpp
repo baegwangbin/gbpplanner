@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #include <gbp/Factorgraph.h>
 #include <gbp/GBPCore.h>
@@ -29,6 +29,8 @@ void FactorGraph::factorIteration(MsgPassingMode msg_passing_mode){
     for (int f_idx=0; f_idx<factors_.size(); f_idx++){
         auto f_it = factors_.begin(); std::advance(f_it, f_idx);
         auto [f_key, fac] = *f_it;
+
+        if (!fac->active_) continue;
 
         for (auto var : fac->variables_){
             // Check if the factor need to be skipped [see note in description]
@@ -60,6 +62,8 @@ void FactorGraph::variableIteration(MsgPassingMode msg_passing_mode){
     for (int v_idx=0; v_idx<variables_.size(); v_idx++){
         auto v_it = variables_.begin(); std::advance(v_it, v_idx);
         auto [v_key, var] = *v_it;
+
+        if (!var->active_) continue;
 
         for (auto [f_key, fac] : var->factors_){
             // * Check if the variable need to be skipped [see note in description]

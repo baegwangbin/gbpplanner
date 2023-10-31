@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #pragma once
 
@@ -37,6 +37,7 @@ class Variable {
         std::map<Key, std::shared_ptr<Factor>> factors_{};  // Map of factors connected to the variable, accessed by their key
         float size_;                                        // Size of variable (usually taken from robot->robot_radius)
         std::function<void()> draw_fn_ = NULL;              // Space for custom draw function of variable. Usually robot->draw() supercedes this
+        bool active_ = true;
 
         // Function declarations
         Variable(int v_id, int r_id, const Eigen::VectorXd& mu_prior, const Eigen::VectorXd& sigma_prior_list, float size, int n_dofs=4);

@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #pragma once
 #include <Simulator.h>
@@ -24,7 +24,10 @@ public:
     Image obstacleImg_;                             // Image representing obstacles in the environment
     Texture2D texture_img_;                         // Raylib Texture created from obstacleImg
     Model robotModel_;                              // Raylib Model representing a robot. This can be changed.
-    Model groundModel_;                             // Model representing the ground plane
+    Model groundModel_;                             // Model representing the ground plane    
+    Model cameraModel_;                              // Raylib Model representing a robot. This can be changed.
+    Model landmarkModel_;                             // Model representing the ground plane
+    Model worldFrameAxisModel_;                             // Model representing the world coordinate frame
     Vector3 groundModelpos_;                        // Ground plane position
     Shader lightShader_;                            // Light shader
     

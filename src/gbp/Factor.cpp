@@ -1,6 +1,6 @@
 /**************************************************************************************/
 // Copyright (c) 2023 Aalok Patwardhan (a.patwardhan21@imperial.ac.uk)
-// This code is licensed (see LICENSE for details)
+// This code is licensed under MIT license (see LICENSE for details)
 /**************************************************************************************/
 #include <Utils.h>
 #include <gbp/GBPCore.h>
@@ -24,10 +24,10 @@
 Factor::Factor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
         float sigma, const Eigen::VectorXd& measurement, 
         int n_dofs) 
-        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), n_dofs_(n_dofs) {
+        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), n_dofs_(n_dofs), sigma_(sigma) {
 
         // Initialise precision of the measurement function
-        this->meas_model_lambda_ = Eigen::MatrixXd::Identity(z_.rows(), z_.rows()) / pow(sigma,2.);
+        this->meas_model_lambda_ = Eigen::MatrixXd::Identity(z_.rows(), z_.rows()) / pow(sigma_, 2.);
         
         // Initialise empty inbox and outbox
         int n_dofs_total = 0; int n_dofs_var;
@@ -124,6 +124,21 @@ bool Factor::update_factor(){
     Eigen::VectorXd factor_eta_potential = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
     this->initialised_ = true;
 
+    // Robustify with HUBER loss
+    double robustness_scalar = 1.;
+    double mahalanobis_dist = residual().norm() / this->sigma_;
+    if (mahalanobis_dist > this->mahalanobis_threshold_){
+        robustness_scalar = pow(this->sigma_, 2.) * pow(mahalanobis_dist, 2.) / 
+                    (2.* this->mahalanobis_threshold_ * mahalanobis_dist - 0.5 * pow(this->mahalanobis_threshold_, 2.));
+        this->robust_flag_ = true;
+    } else {
+        this->robust_flag_ = false;
+    }
+    factor_eta_potential *= robustness_scalar;
+    factor_lam_potential *= robustness_scalar;
+
+
+
     //  Update factor precision and information with incoming messages from connected variables.
     int marginalisation_idx = 0;
     for (int v_out_idx=0; v_out_idx<variables_.size(); v_out_idx++){
@@ -188,6 +203,45 @@ Message Factor::marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen:
 // You may create a new factor_type_, in the enum in Factor.h (optional, default type is DEFAULT_FACTOR)
 // Create a measurement function h_func_() and optionally Jacobian J_func_().
 
+/********************************************************************************************/
+/* Reprojection factor: */
+/*****************************************************************************************************/
+ReprojectionFactor::ReprojectionFactor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
+    float sigma, const Eigen::Vector2d& measurement, const Eigen::Matrix3d& K)
+    : Factor{f_id, r_id, variables, sigma, measurement}{ 
+        factor_type_ = DEFAULT_FACTOR;
+        // linear_ = true;
+        K_ = K; // Intrinsic
+
+    };
+
+Eigen::MatrixXd ReprojectionFactor::h_func_(const Eigen::VectorXd& X){
+    Eigen::VectorXd h = Eigen::VectorXd::Zero(2);
+    
+    Eigen::Vector3d t = X(seqN(0,3));
+    Eigen::Matrix3d R_cw = so3exp(X(seqN(3,3)));
+    Eigen::Vector3d y_wf = X(seqN(6,3));  
+
+    Eigen::Vector3d reproj_temp = K_ * (R_cw * y_wf + t);
+    h = reproj_temp({0,1}) / reproj_temp(2);
+    return h;
+}    
+Eigen::MatrixXd ReprojectionFactor::J_func_(const Eigen::VectorXd& X){
+    Eigen::MatrixXd J = Eigen::MatrixXd::Zero(2,9);
+    
+    Eigen::Vector3d t = X(seqN(0,3));
+    Eigen::Vector3d w = X(seqN(3,3));
+    Eigen::Matrix3d R_cw = so3exp(w);
+    Eigen::Vector3d y_wf = X(seqN(6,3));  
+
+
+    Eigen::MatrixXd J_proj = proj_derivative(K_ * (R_cw * y_wf + t));
+
+    J(Eigen::all, seqN(0,3)) = J_proj * K_;
+    J(Eigen::all, seqN(3,3)) = J_proj * K_ * dR_wx_dw(w, y_wf);
+    J(Eigen::all, seqN(6,3)) = J_proj * K_ * R_cw;    
+    return J;
+}
 /********************************************************************************************/
 /* Dynamics factor: constant-velocity model */
 /*****************************************************************************************************/
