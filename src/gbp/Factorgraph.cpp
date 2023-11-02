@@ -25,17 +25,15 @@ FactorGraph::FactorGraph(int robot_id) : robot_id_(robot_id){};
 //          in which case the variable or factor may or may not need to take part in GBP depending on if it's connected to another robot
 /******************************************************************************************************/
 void FactorGraph::factorIteration(MsgPassingMode msg_passing_mode){
-#pragma omp parallel for    
+// #pragma omp parallel for    
     for (int f_idx=0; f_idx<factors_.size(); f_idx++){
         auto f_it = factors_.begin(); std::advance(f_it, f_idx);
         auto [f_key, fac] = *f_it;
 
-        if (!fac->active_) continue;
-
         for (auto var : fac->variables_){
             // Check if the factor need to be skipped [see note in description]
-            if (((msg_passing_mode==INTERNAL) == (var->key_.robot_id_!=robot_id_) ||
-                    (!interrobot_comms_active_ && (var->key_.robot_id_!=robot_id_) && (msg_passing_mode==EXTERNAL)))) continue;
+            // if (((msg_passing_mode==INTERNAL) == (var->key_.robot_id_!=robot_id_) ||
+                    // (!interrobot_comms_active_ && (var->key_.robot_id_!=robot_id_) && (msg_passing_mode==EXTERNAL)))) continue;
             // Read message from each connected variable
             fac->inbox_[var->key_] = var->outbox_.at(f_key);
         }
@@ -58,17 +56,15 @@ void FactorGraph::factorIteration(MsgPassingMode msg_passing_mode){
 //          in which case the variable or factor may or may not need to take part in GBP depending on if it's connected to another robot
 /******************************************************************************************************/
 void FactorGraph::variableIteration(MsgPassingMode msg_passing_mode){
-#pragma omp parallel for    
+// #pragma omp parallel for    
     for (int v_idx=0; v_idx<variables_.size(); v_idx++){
         auto v_it = variables_.begin(); std::advance(v_it, v_idx);
         auto [v_key, var] = *v_it;
 
-        if (!var->active_) continue;
-
         for (auto [f_key, fac] : var->factors_){
             // * Check if the variable need to be skipped [see note in description]
-            if (((msg_passing_mode==INTERNAL) == (var->key_.robot_id_!=robot_id_) ||
-                    (!interrobot_comms_active_ && (var->key_.robot_id_!=robot_id_) && (msg_passing_mode==EXTERNAL)))) continue;
+            // if (((msg_passing_mode==INTERNAL) == (var->key_.robot_id_!=robot_id_) ||
+                    // (!interrobot_comms_active_ && (var->key_.robot_id_!=robot_id_) && (msg_passing_mode==EXTERNAL)))) continue;
             
             // Read message from each connected factor
             var->inbox_[f_key] = fac->outbox_.at(v_key);

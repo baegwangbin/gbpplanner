@@ -40,7 +40,7 @@ Graphics::Graphics(Image obstacleImg) : obstacleImg_(ImageCopy(obstacleImg)){
     SetShaderValue(lightShader_, ambientLoc, temp, SHADER_UNIFORM_VEC4);
 
     // Assign our lighting shader to robot model
-    cameraModel_ = LoadModelFromMesh(GenMeshCone(1., -1., 4.));
+    cameraModel_ = LoadModelFromMesh(GenMeshCone(1., -2., 4.));
     cameraModel_.transform = MatrixMultiply(MatrixTranslate(0., -2., 0.),MatrixRotateXYZ(Vector3{90.f*DEG2RAD, 45.f*DEG2RAD, 0.f})) ;
     cameraModel_.materials[0].shader = lightShader_;
     cameraModel_.materials[0].maps[0].color = WHITE;

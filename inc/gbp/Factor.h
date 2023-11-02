@@ -44,15 +44,16 @@ class Factor {
     bool linear_ = false;                       // True is factor is linear (avoids recomputation of Jacobian)
     bool skip_flag = false;                          // Flag to skip factor update if required
     virtual bool skip_factor(){                 // Default function to set skip flag
-        skip_flag = false;
+        // skip_flag = false;
         return skip_flag;
     };
     double mahalanobis_threshold_ = 2.;
     double sigma_;
     bool robust_flag_ = false;
+    double adaptive_gauss_noise_var_;
     std::vector<std::shared_ptr<Variable>> variables_{};    // Vector of pointers to the connected variables. Order of variables matters
     bool active_ = true;
-
+    double damping_ = 0.;
     
 
     // Function declarations

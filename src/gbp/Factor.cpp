@@ -28,6 +28,7 @@ Factor::Factor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variab
 
         // Initialise precision of the measurement function
         this->meas_model_lambda_ = Eigen::MatrixXd::Identity(z_.rows(), z_.rows()) / pow(sigma_, 2.);
+        this->adaptive_gauss_noise_var_ = pow(sigma_, 2.);
         
         // Initialise empty inbox and outbox
         int n_dofs_total = 0; int n_dofs_var;
@@ -95,16 +96,6 @@ Eigen::MatrixXd Factor::jacobianFirstOrder(const Eigen::VectorXd& X0){
 /*****************************************************************************************************/
 bool Factor::update_factor(){
 
-    // Messages from connected variables are aggregated.
-    // The beliefs are used to create the linearisation point X_.
-    int idx = 0; int n_dofs;
-    for (int v=0; v<variables_.size(); v++){
-        n_dofs = variables_[v]->n_dofs_;
-        auto& [_, __, mu_belief] = this->inbox_[variables_[v]->key_];
-        X_(seqN(idx, n_dofs)) = mu_belief;
-        idx += n_dofs;
-    }
-
     // *Depending on the problem*, we may need to skip computation of this factor.
     // eg. to avoid extra computation, factor may not be required if two connected variables are too far apart.
     // in which case send out a Zero Message.
@@ -114,29 +105,36 @@ bool Factor::update_factor(){
         }           
         return false;
     }
+
+    // Messages from connected variables are aggregated.
+    // The beliefs are used to create the linearisation point X_.
+    static int t = 0;
+    int idx = 0; int n_dofs;
+    for (int v=0; v<variables_.size(); v++){
+        n_dofs = variables_[v]->n_dofs_;
+        auto& [_, __, mu_belief] = this->inbox_[variables_[v]->key_];
+        X_(seqN(idx, n_dofs)) = mu_belief;
+        idx += n_dofs;
+    }
     
     // The Factor potential and linearised Factor Precision and Information is calculated using h_func_ and J_func_
     // residual() is by default (z - h_func_(X))
     // Skip calculation of Jacobian if the factor is linear and Jacobian has already been computed once
     h_ = h_func_(X_);
     J_ = (this->linear_ && this->initialised_)? J_ : this->J_func_(X_);
+    this->initialised_ = true;
     Eigen::MatrixXd factor_lam_potential = J_.transpose() * meas_model_lambda_ * J_;
     Eigen::VectorXd factor_eta_potential = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
-    this->initialised_ = true;
 
-    // Robustify with HUBER loss
-    double robustness_scalar = 1.;
+    /**** Robustify with HUBER loss *****/
+    double robustness_k = 1.;
     double mahalanobis_dist = residual().norm() / this->sigma_;
-    if (mahalanobis_dist > this->mahalanobis_threshold_){
-        robustness_scalar = pow(this->sigma_, 2.) * pow(mahalanobis_dist, 2.) / 
-                    (2.* this->mahalanobis_threshold_ * mahalanobis_dist - 0.5 * pow(this->mahalanobis_threshold_, 2.));
-        this->robust_flag_ = true;
-    } else {
-        this->robust_flag_ = false;
+    if (mahalanobis_dist >= mahalanobis_threshold_){
+        robustness_k = (2. * mahalanobis_threshold_ * mahalanobis_dist - pow(mahalanobis_threshold_, 2.)) / pow(mahalanobis_dist, 2.);
     }
-    factor_eta_potential *= robustness_scalar;
-    factor_lam_potential *= robustness_scalar;
 
+    factor_eta_potential *= robustness_k;
+    factor_lam_potential *= robustness_k;
 
 
     //  Update factor precision and information with incoming messages from connected variables.
@@ -160,7 +158,13 @@ bool Factor::update_factor(){
         }
         
         // Marginalise the Factor Precision and Information to send to the relevant variable
-        outbox_[var_out->key_] = marginalise_factor_dist(factor_eta, factor_lam, v_out_idx, marginalisation_idx);
+        Message outgoing_msg = marginalise_factor_dist(factor_eta, factor_lam, v_out_idx, marginalisation_idx);
+
+        // Apply damping and send out
+        outgoing_msg.eta *= (1. - damping_);
+        outgoing_msg.lambda *= (1. - damping_);
+        outbox_[var_out->key_] = outgoing_msg;
+
         marginalisation_idx += var_out->n_dofs_;
     }
 
@@ -211,6 +215,7 @@ ReprojectionFactor::ReprojectionFactor(int f_id, int r_id, std::vector<std::shar
     : Factor{f_id, r_id, variables, sigma, measurement}{ 
         factor_type_ = DEFAULT_FACTOR;
         // linear_ = true;
+        damping_ = globals.DAMPING;
         K_ = K; // Intrinsic
 
     };
@@ -233,7 +238,6 @@ Eigen::MatrixXd ReprojectionFactor::J_func_(const Eigen::VectorXd& X){
     Eigen::Vector3d w = X(seqN(3,3));
     Eigen::Matrix3d R_cw = so3exp(w);
     Eigen::Vector3d y_wf = X(seqN(6,3));  
-
 
     Eigen::MatrixXd J_proj = proj_derivative(K_ * (R_cw * y_wf + t));
 

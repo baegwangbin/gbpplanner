@@ -35,14 +35,15 @@ int LMK_ID_OFFSET = 0;
 
 int n_dof_lmk = 3;
 int n_dof_cam = 6;
-double sigma_lmk = 100;
+double sigma_lmk = 1;
 double sigma_cam = 1;
-double sigma_reproj = 100.;
+double sigma_reproj = 2.;
 std::vector<Eigen::VectorXd> cam_means;
 std::vector<Eigen::VectorXd> lmk_means;
 std::map<int, std::map<int, Eigen::VectorXd>> meas_dict;
 std::map<int, std::shared_ptr<Variable>> inactive_vars{};
-std::map<int, int> num_measurements_lmk{}; // lmk_id, num
+std::map<int, int> lmk2vid{}; // lmk_id, num
+std::map<int, int> cam2vid{}; // cam_id, num
 Eigen::MatrixXd K;
 
 
@@ -75,13 +76,7 @@ int main(int argc, char *argv[]){
     
     factorgraph = std::make_shared<FactorGraph>(0);
     factorgraphs[0] = factorgraph;
-        // Eigen::VectorXd sigma_list_lmk = Eigen::VectorXd::Constant(n_dof_lmk, sigma_lmk);
-        // for (auto v : lmk_means){
-        //     auto variable_lmk = std::make_shared<Variable>(next_vid_++, 0, v, sigma_list_lmk, 1, n_dof_lmk);
-        //     factorgraph->variables_[variable_lmk->key_] = variable_lmk;    
 
-        // }
-    
     while (globals.RUN){
         eventHandler();                // Capture keypresses or mouse events             
         if (globals.SIM_MODE == Timestep) loadFrame();
@@ -98,50 +93,62 @@ int main(int argc, char *argv[]){
 /*******************************************************************************/
 void loadFrame(){
     if (next_cam_id < cam_means.size()){
-        print("Loading Frame ", next_cam_id, cam_means[next_cam_id].transpose());
+
+        // Create Variable for Camera next_cam_id
         Eigen::VectorXd sigma_list_cam = Eigen::VectorXd::Constant(n_dof_cam, sigma_cam);
+        if (next_cam_id < 2) sigma_list_cam.setConstant(1e-3);
         auto variable_cam = std::make_shared<Variable>(next_vid_++, 0, cam_means[next_cam_id], sigma_list_cam, 0, n_dof_cam);
+        cam2vid[next_cam_id] = variable_cam->v_id_;
         factorgraph->variables_[variable_cam->key_] = variable_cam;    
 
-        next_cam_id++;
-
-        Eigen::VectorXd sigma_list_lmk = Eigen::VectorXd::Constant(n_dof_lmk, sigma_lmk);
         for (auto [lmk_id, meas] : meas_dict[next_cam_id]){
-            // If new mid not found in created v ids
-            if (!factorgraph->variables_.count(Key{0, lmk_id + LMK_ID_OFFSET})){
-                Eigen::VectorXd mu = lmk_means[lmk_id] + 0.1*Eigen::VectorXd::Random(3); // TODO
+            // If this lmk_id has not had a variable created for it:
+            if (!lmk2vid.count(lmk_id)){
+                // Create Variable
+                Eigen::VectorXd mu = lmk_means[lmk_id];// + 0.01 * Eigen::VectorXd::Random(3);
                 // Eigen::VectorXd mu = Eigen::VectorXd::Zero(3);
-                auto variable_lmk = std::make_shared<Variable>(lmk_id + LMK_ID_OFFSET, 0, mu, sigma_list_lmk, 1, n_dof_lmk);
+                Eigen::VectorXd sigma_list_lmk = Eigen::VectorXd::Constant(n_dof_lmk, sigma_lmk);
+                auto variable_lmk = std::make_shared<Variable>(next_vid_++, 0, mu, sigma_list_lmk, 1, n_dof_lmk);
+                // Set variable as inactive and add to inactive vars.
                 variable_lmk->active_ = false;
                 inactive_vars[variable_lmk->v_id_] = variable_lmk;
+                // Add variable to factorgraph
                 factorgraph->variables_[variable_lmk->key_] = variable_lmk;    
+                // Store the variable id in the landmark id lookup
+                lmk2vid[lmk_id] = variable_lmk->v_id_;
+                variable_lmk->update_belief();
             }
-            std::vector<std::shared_ptr<Variable>> variables {variable_cam, factorgraph->getVar(lmk_id + LMK_ID_OFFSET)};
-            auto factor = std::make_shared<ReprojectionFactor>(next_fid_++, 0, variables, sigma_reproj, meas, K);
-            print("VAR BETWEEN ", variable_cam->v_id_, variables.back()->v_id_, meas.transpose());
-            factor->active_ = false;
+
+            // Create reproj factor
+            auto variable_landmark = factorgraph->getVar(lmk2vid.at(lmk_id));
+            std::vector<std::shared_ptr<Variable>> variables {variable_cam, variable_landmark};
+            Eigen::Vector2d z = meas;
+            auto factor = std::make_shared<ReprojectionFactor>(next_fid_++, 0, variables, sigma_reproj, z, K);
+            // Set factor inactive
+
+            factor->skip_flag = true;
             
-            // Add this factor to the variable's list of adjacent factors, as well as to the robot's list of factors
-            for (auto var : factor->variables_){
-                var->add_factor(factor);
-            }
+            // Add this factor to the variable's list of adjacent factors, as well as to the factorgraph
+            for (auto var : factor->variables_) var->add_factor(factor);
             factorgraph->factors_[factor->key_] = factor;  
         }
+        next_cam_id++;
     }
-    for (auto it = inactive_vars.begin(); it != inactive_vars.end();)
-    {
+
+    for (auto it = inactive_vars.cbegin(), next_it = it; it != inactive_vars.cend(); it = next_it){
+        ++next_it;
         auto [vid, var] = *it;
         if (var->factors_.size()>2){
             var->active_ = true;
+            var->update_belief();
             for (auto [fid, fac] : var->factors_){
-                fac->active_ = true;
+                fac->skip_flag = false;
             }
-            it = inactive_vars.erase(it);
+            inactive_vars.erase(it);
         } else {
-            ++it;
+            if (var->active_) print("ERROR: Active variable but has 2 or less factors");
         }
     }
-    print("!", inactive_vars.size(), factorgraph->variables_.size());
     globals.SIM_MODE  = (globals.SIM_MODE==Timestep) ? SimNone : SimNone;
 
 }
@@ -155,7 +162,6 @@ void draw(){
             // Draw Ground
             drawWorldFrame();
             for (auto [vkey, var] : factorgraphs[0]->variables_){
-                // if (vkey.node_id_>5) continue;
 
                 if (var->size_==0){
                     drawCameraVar(var);
@@ -172,12 +178,13 @@ void drawCameraVar(std::shared_ptr<Variable> cam_var){
     Eigen::VectorXd axis = cam_var->mu_({3,4,5}).normalized();
     double angle = cam_var->mu_({3,4,5}).norm() * RAD2DEG;
     Eigen::VectorXd pose = -1.*so3exp(cam_var->mu_({3,4,5})).transpose() * cam_var->mu_({0,1,2});
-    DrawModelEx(graphics->landmarkModel_, Vector3{(float)pose(0), (float)pose(1), (float)pose(2)}, 
-    Vector3{(float)axis(0),(float)axis(1),(float)axis(2)}, angle, Vector3{0.01, 0.01f, 0.01f},DARKGREEN);
+    DrawModelWiresEx(graphics->cameraModel_, Vector3{(float)pose(0), (float)pose(1), (float)pose(2)}, 
+    Vector3{(float)axis(0),(float)axis(1),(float)axis(2)}, -angle, Vector3{0.05, 0.05f, 0.05f},DARKBLUE);
 }
 
 void drawLandmarkVar(std::shared_ptr<Variable> lmk_var){
-    DrawModel(graphics->landmarkModel_, Vector3{(float)lmk_var->mu_(0), (float)lmk_var->mu_(1), (float)lmk_var->mu_(2)}, 0.01f, RED);
+    Color col = (lmk_var->active_) ? DARKGREEN : RED;
+    DrawModel(graphics->landmarkModel_, Vector3{(float)lmk_var->mu_(0), (float)lmk_var->mu_(1), (float)lmk_var->mu_(2)}, 0.01f, col);
 }
 
 void drawWorldFrame(){
