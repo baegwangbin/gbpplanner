@@ -10,6 +10,7 @@
 
 #include <DArgs.h>
 
+#include "definitions.h"
 #include <Globals.h>
 #include <gbp/GBPCore.h>
 #include <gbp/Factorgraph.h>
@@ -36,7 +37,7 @@ int LMK_ID_OFFSET = 0;
 int n_dof_lmk = 3;
 int n_dof_cam = 6;
 double sigma_lmk = 1;
-double sigma_cam = 1;
+double sigma_cam = 1.;
 double sigma_reproj = 2.;
 std::vector<Eigen::VectorXd> cam_means;
 std::vector<Eigen::VectorXd> lmk_means;
@@ -44,6 +45,8 @@ std::map<int, std::map<int, Eigen::VectorXd>> meas_dict;
 std::map<int, std::shared_ptr<Variable>> inactive_vars{};
 std::map<int, int> lmk2vid{}; // lmk_id, num
 std::map<int, int> cam2vid{}; // cam_id, num
+int cam_iter = 0;
+
 Eigen::MatrixXd K;
 
 
@@ -61,17 +64,16 @@ int main(int argc, char *argv[]){
     Image temp_img = GenImageColor(500, 500, WHITE);
     graphics = new Graphics(temp_img);
     globals.SIM_MODE = SimNone;
-
+    // print(MY_PATH);
 
 
     // Read camera params
-    // auto [n_keyframes, n_points, n_edges, cam_means_temp, lmk_means_temp, measurements, meas_distort, measurements_camIDs, \
-    //         measurements_lIDs, K_temp, meas_dict_temp] = read_balfile("/home/ap721/code/visIMU/bundle_adjustment/data/MH01/bal.txt");
-    auto balfile_out = read_balfile("/home/ap721/code/visIMU/bundle_adjustment/data/MH01/bal.txt");
-    cam_means = std::get<3>(balfile_out);
-    lmk_means = std::get<4>(balfile_out);
-    meas_dict = std::get<10>(balfile_out);
-    K = std::get<9>(balfile_out);
+    // auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/MH01/bal.txt"));
+    auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/V103/bal.txt"));
+    K = std::get<0>(balfile_out);
+    cam_means = std::get<1>(balfile_out);
+    lmk_means = std::get<2>(balfile_out);
+    meas_dict = std::get<3>(balfile_out);
     LMK_ID_OFFSET = cam_means.size();
     
     factorgraph = std::make_shared<FactorGraph>(0);
@@ -80,7 +82,8 @@ int main(int argc, char *argv[]){
     while (globals.RUN){
         eventHandler();                // Capture keypresses or mouse events             
         if (globals.SIM_MODE == Timestep) loadFrame();
-        if (globals.SIM_MODE == Iterate) iterateGBP(10, INTERNAL, factorgraphs);
+        // if (globals.SIM_MODE == Iterate) iterateGBP(5, INTERNAL, factorgraphs);
+        iterateGBP(5, INTERNAL, factorgraphs);
         draw();
     }
 
@@ -92,6 +95,7 @@ int main(int argc, char *argv[]){
 // Load next frame
 /*******************************************************************************/
 void loadFrame(){
+        int nf = 0;
     if (next_cam_id < cam_means.size()){
 
         // Create Variable for Camera next_cam_id
@@ -99,7 +103,21 @@ void loadFrame(){
         if (next_cam_id < 2) sigma_list_cam.setConstant(1e-3);
         auto variable_cam = std::make_shared<Variable>(next_vid_++, 0, cam_means[next_cam_id], sigma_list_cam, 0, n_dof_cam);
         cam2vid[next_cam_id] = variable_cam->v_id_;
-        factorgraph->variables_[variable_cam->key_] = variable_cam;    
+        factorgraph->variables_[variable_cam->key_] = variable_cam;  
+
+        // Trying to keep a sliding window of 5 keyframes 
+        if (next_cam_id >= 5){
+            auto cvar = factorgraph->getVar(cam2vid[cam_iter]);
+            cvar->active_ = false;
+            std::vector<Key> facs_to_delete{};
+            for (auto [fid, fac] : cvar->factors_) facs_to_delete.push_back(fac->key_);
+            for (auto f : facs_to_delete){
+                cvar->delete_factor(f);
+                factorgraph->factors_.erase(f);
+            }
+
+            cam_iter++; 
+        }
 
         for (auto [lmk_id, meas] : meas_dict[next_cam_id]){
             // If this lmk_id has not had a variable created for it:
@@ -124,8 +142,10 @@ void loadFrame(){
             std::vector<std::shared_ptr<Variable>> variables {variable_cam, variable_landmark};
             Eigen::Vector2d z = meas;
             auto factor = std::make_shared<ReprojectionFactor>(next_fid_++, 0, variables, sigma_reproj, z, K);
+            nf++;
             // Set factor inactive
 
+            factor->active_ = false;
             factor->skip_flag = true;
             
             // Add this factor to the variable's list of adjacent factors, as well as to the factorgraph
@@ -140,8 +160,8 @@ void loadFrame(){
         auto [vid, var] = *it;
         if (var->factors_.size()>2){
             var->active_ = true;
-            var->update_belief();
             for (auto [fid, fac] : var->factors_){
+                fac->active_ = true;
                 fac->skip_flag = false;
             }
             inactive_vars.erase(it);
@@ -150,6 +170,7 @@ void loadFrame(){
         }
     }
     globals.SIM_MODE  = (globals.SIM_MODE==Timestep) ? SimNone : SimNone;
+    print("FACTORS: ", factorgraph->factors_.size(), "new: ", nf);
 
 }
 /*******************************************************************************/
@@ -175,6 +196,7 @@ void draw(){
 };
 
 void drawCameraVar(std::shared_ptr<Variable> cam_var){
+    if (!cam_var->active_) return;
     Eigen::VectorXd axis = cam_var->mu_({3,4,5}).normalized();
     double angle = cam_var->mu_({3,4,5}).norm() * RAD2DEG;
     Eigen::VectorXd pose = -1.*so3exp(cam_var->mu_({3,4,5})).transpose() * cam_var->mu_({0,1,2});

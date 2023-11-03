@@ -1,0 +1,7 @@
+#ifndef DEFINITIONS_H_IN
+#define DEFINITIONS_H_IN
+
+#define TESTDEF "@TESTDEF@"
+#define GBPPLANNER_DIR "@GBPPLANNER_DIR@"
+
+#endif // DEFINITIONS_H_IN

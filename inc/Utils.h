@@ -103,9 +103,10 @@ inline std::vector<long> read_KFfile(std::string filename){
     return timestamps;
 };
 
-using balfile_result_type = std::tuple<int, int, int, std::vector<Eigen::VectorXd>, std::vector<Eigen::VectorXd>, 
-                                       std::vector<Eigen::VectorXd>, std::vector<Eigen::VectorXd>, std::vector<int>, 
-                                       std::vector<int>, Eigen::MatrixXd, std::map<int, std::map<int, Eigen::VectorXd>>>;
+using balfile_result_type = std::tuple< Eigen::MatrixXd, std::vector<Eigen::VectorXd>, std::vector<Eigen::VectorXd>, 
+                                        std::map<int, std::map<int, Eigen::VectorXd>>, 
+                                        int, int, int, std::vector<Eigen::VectorXd>
+                                      >;
 inline balfile_result_type read_balfile(std::string filename){
     balfile_result_type result;
 
@@ -116,10 +117,7 @@ inline balfile_result_type read_balfile(std::string filename){
     int n_edges;
     std::vector<Eigen::VectorXd> cam_means{};
     std::vector<Eigen::VectorXd> lmk_means{};
-    std::vector<Eigen::VectorXd> measurements{};
     std::vector<Eigen::VectorXd> measDistort{};
-    std::vector<int> measurements_camIDs{};
-    std::vector<int> measurements_lIDs{};
     std::map<int, std::map<int, Eigen::VectorXd>> meas_dict{};
     Eigen::MatrixXd K = Eigen::MatrixXd::Zero(3,3);
 
@@ -148,10 +146,6 @@ inline balfile_result_type read_balfile(std::string filename){
             std::getline(file, line);
             std::istringstream split(line);
             splitted.clear(); for (std::string each; std::getline(split, each, ' '); splitted.push_back(each));   
-            measurements_camIDs.push_back(std::stoi(splitted[0]));
-            measurements_lIDs.push_back(std::stoi(splitted[1]));
-            measurements.push_back(Eigen::VectorXd{{(double)std::stof(splitted[2])}, {(double)std::stof(splitted[3])}});
-
             meas_dict[std::stoi(splitted[0])][std::stoi(splitted[1])] = Eigen::VectorXd{{(double)std::stof(splitted[2])}, {(double)std::stof(splitted[3])}};
 
             if (splitted.size() > 4) measDistort.push_back(Eigen::VectorXd{{(double)std::stof(splitted[4])}, {(double)std::stof(splitted[5])}});
@@ -181,5 +175,5 @@ inline balfile_result_type read_balfile(std::string filename){
         file.close();
     }
 
-    return std::make_tuple(n_keyframes, n_points, n_edges, cam_means, lmk_means, measurements, measDistort, measurements_camIDs, measurements_lIDs, K, meas_dict);
+    return std::make_tuple(K, cam_means, lmk_means, meas_dict, n_keyframes, n_points, n_edges, measDistort);
 };

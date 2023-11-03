@@ -13,6 +13,8 @@ find_package(OpenMP REQUIRED)
 add_subdirectory(thirdparty/raylib)
 
 #################################################################
+set(GBPPLANNER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/")
+configure_file (${CMAKE_CURRENT_SOURCE_DIR}/inc/definitions.h.in ${CMAKE_CURRENT_SOURCE_DIR}/inc/definitions.h @ONLY)
 
 add_library(gbp STATIC
     src/gbp/Variable.cpp 

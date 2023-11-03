@@ -30,6 +30,8 @@ void FactorGraph::factorIteration(MsgPassingMode msg_passing_mode){
         auto f_it = factors_.begin(); std::advance(f_it, f_idx);
         auto [f_key, fac] = *f_it;
 
+        if (!fac->active_) continue;
+
         for (auto var : fac->variables_){
             // Check if the factor need to be skipped [see note in description]
             // if (((msg_passing_mode==INTERNAL) == (var->key_.robot_id_!=robot_id_) ||
@@ -60,6 +62,8 @@ void FactorGraph::variableIteration(MsgPassingMode msg_passing_mode){
     for (int v_idx=0; v_idx<variables_.size(); v_idx++){
         auto v_it = variables_.begin(); std::advance(v_it, v_idx);
         auto [v_key, var] = *v_it;
+        
+        if (!var->active_) continue;
 
         for (auto [f_key, fac] : var->factors_){
             // * Check if the variable need to be skipped [see note in description]
