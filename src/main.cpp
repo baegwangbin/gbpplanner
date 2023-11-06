@@ -37,7 +37,7 @@ int LMK_ID_OFFSET = 0;
 int n_dof_lmk = 3;
 int n_dof_cam = 6;
 double sigma_lmk = 1;
-double sigma_cam = 1.;
+double sigma_cam = 0.5;
 double sigma_reproj = 2.;
 std::vector<Eigen::VectorXd> cam_means;
 std::vector<Eigen::VectorXd> lmk_means;
@@ -68,8 +68,8 @@ int main(int argc, char *argv[]){
 
 
     // Read camera params
-    // auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/MH01/bal.txt"));
-    auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/V103/bal.txt"));
+    auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/MH01/bal.txt"));
+    // auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/V103/bal.txt"));
     K = std::get<0>(balfile_out);
     cam_means = std::get<1>(balfile_out);
     lmk_means = std::get<2>(balfile_out);
@@ -78,11 +78,13 @@ int main(int argc, char *argv[]){
     
     factorgraph = std::make_shared<FactorGraph>(0);
     factorgraphs[0] = factorgraph;
+    // Initially load 5 frames
+    for (int i=0; i<5; i++) loadFrame();
+    iterateGBP(5, INTERNAL, factorgraphs);
 
     while (globals.RUN){
         eventHandler();                // Capture keypresses or mouse events             
         if (globals.SIM_MODE == Timestep) loadFrame();
-        // if (globals.SIM_MODE == Iterate) iterateGBP(5, INTERNAL, factorgraphs);
         iterateGBP(5, INTERNAL, factorgraphs);
         draw();
     }
@@ -159,6 +161,25 @@ void loadFrame(){
         ++next_it;
         auto [vid, var] = *it;
         if (var->factors_.size()>2){
+            // Now we are activating the variable, set it's mu to the average distance of the first cam that saw it.
+            auto oldest_cam = var->factors_.begin()->second->variables_[0];
+            Eigen::MatrixXd Rcw = so3exp(oldest_cam->mu_({3,4,5}));
+            Eigen::Matrix4d Twc; Twc << so3exp(oldest_cam->mu_({3,4,5})), -1.*Rcw.transpose() * oldest_cam->mu_({0,1,2}),
+                                        0., 0., 0., 1.;
+            double init_depth = 0.; int cnt = 0;
+            for (auto [fid, fac] : oldest_cam->factors_){
+                if (!fac->active_) continue;
+                init_depth += (fac->variables_[1]->mu_ - Twc({0,1,2},3)).norm();
+                cnt++;
+            }
+            if (cnt>0){
+                init_depth = init_depth / (float)cnt;
+                Eigen::Vector3d meas_homogeneous; meas_homogeneous << var->factors_.begin()->second->z_, 1.;
+                Eigen::Vector4d pc_homog; pc_homog << (K.inverse() * meas_homogeneous).normalized() * (init_depth + 0.1 * rand()/(float)RAND_MAX * init_depth), 1.;
+                Eigen::VectorXd pw = Twc * pc_homog;
+                Eigen::Vector3d new_mu = pw({0,1,2});
+                var->change_variable_prior(new_mu);
+            }
             var->active_ = true;
             for (auto [fid, fac] : var->factors_){
                 fac->active_ = true;

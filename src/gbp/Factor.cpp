@@ -108,7 +108,6 @@ bool Factor::update_factor(){
 
     // Messages from connected variables are aggregated.
     // The beliefs are used to create the linearisation point X_.
-    static int t = 0;
     int idx = 0; int n_dofs;
     for (int v=0; v<variables_.size(); v++){
         n_dofs = variables_[v]->n_dofs_;
@@ -123,8 +122,8 @@ bool Factor::update_factor(){
     h_ = h_func_(X_);
     J_ = (this->linear_ && this->initialised_)? J_ : this->J_func_(X_);
     this->initialised_ = true;
-    Eigen::MatrixXd factor_lam_potential = J_.transpose() * meas_model_lambda_ * J_;
-    Eigen::VectorXd factor_eta_potential = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
+    factor_lam_potential_ = J_.transpose() * meas_model_lambda_ * J_;
+    factor_eta_potential_ = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
 
     /**** Robustify with HUBER loss *****/
     double robustness_k = 1.;
@@ -133,8 +132,8 @@ bool Factor::update_factor(){
         robustness_k = (2. * mahalanobis_threshold_ * mahalanobis_dist - pow(mahalanobis_threshold_, 2.)) / pow(mahalanobis_dist, 2.);
     }
 
-    factor_eta_potential *= robustness_k;
-    factor_lam_potential *= robustness_k;
+    factor_eta_potential_ *= robustness_k;
+    factor_lam_potential_ *= robustness_k;
 
 
     //  Update factor precision and information with incoming messages from connected variables.
@@ -142,8 +141,8 @@ bool Factor::update_factor(){
     for (int v_out_idx=0; v_out_idx<variables_.size(); v_out_idx++){
         auto var_out = variables_[v_out_idx];
         // Initialise with factor values
-        Eigen::VectorXd factor_eta = factor_eta_potential;     
-        Eigen::MatrixXd factor_lam = factor_lam_potential;
+        Eigen::VectorXd factor_eta = factor_eta_potential_;     
+        Eigen::MatrixXd factor_lam = factor_lam_potential_;
         
         // Combine the factor with the belief from other variables apart from the receiving variable
         int idx_v = 0;

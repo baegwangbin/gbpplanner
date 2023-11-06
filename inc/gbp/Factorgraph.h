@@ -5,6 +5,7 @@
 #pragma once
 #include <memory>
 #include <map>
+#include <unordered_set>
 
 #include <Utils.h>
 #include <gbp/GBPCore.h>
@@ -23,6 +24,8 @@ class FactorGraph {
     int robot_id_;                                          // id of the robot this belongs to
     std::map<Key, std::shared_ptr<Variable>> variables_{};
     std::map<Key, std::shared_ptr<Factor>> factors_{};
+    std::unordered_set<int> active_variables_{};
+    std::unordered_set<int> active_factors_{};   // maybe not needed
     bool interrobot_comms_active_ = true;                   // Flag for whether this factorgraph/robot communicates with other robots
 
     // GBP functions

@@ -37,6 +37,8 @@ class Factor {
     Eigen::MatrixXd h_, J_;                     // Stored values of measurement function h_func_() and Jacobian J_func_()
     Eigen::VectorXd X_;                         // Stored linearisation point
     Eigen::MatrixXd meas_model_lambda_;         // Precision of measurement model
+    Eigen::MatrixXd factor_lam_potential_;
+    Eigen::VectorXd factor_eta_potential_;
     Mailbox inbox_, outbox_, last_outbox_;      
     FactorType factor_type_ = DEFAULT_FACTOR; 
     float delta_jac=1e-8;                       // Delta used for first order jacobian calculation
