@@ -143,7 +143,7 @@ void loadFrame(){
             // If this lmk_id has not had a variable created for it:
             if (!lmk2vid.count(lmk_id)){
                 // Create Variable
-                Eigen::VectorXd mu = lmk_means[lmk_id];// + 0.01 * Eigen::VectorXd::Random(3);
+                Eigen::VectorXd mu = lmk_means[lmk_id] + 0.1 * Eigen::VectorXd::Random(3);
                 // Eigen::VectorXd mu = Eigen::VectorXd::Zero(3);
                 Eigen::VectorXd sigma_list_lmk = Eigen::VectorXd::Constant(n_dof_lmk, sigma_lmk);
                 auto variable_lmk = std::make_shared<Variable>(next_vid_++, 0, mu, sigma_list_lmk, 1, n_dof_lmk);

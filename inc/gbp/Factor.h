@@ -56,12 +56,12 @@ class Factor {
     std::vector<std::shared_ptr<Variable>> variables_{};    // Vector of pointers to the connected variables. Order of variables matters
     bool active_ = true;
     double damping_ = 0.;
+    int min_lin_updates_;
+    float beta_;
     
-
     // Function declarations
     Factor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
-            float sigma, const Eigen::VectorXd& measurement, 
-            int n_dofs=4);
+            float sigma, const Eigen::VectorXd& measurement, float beta=0.0, int min_lin_updates=4, int n_dofs=4);
 
     ~Factor();
 
@@ -75,9 +75,15 @@ class Factor {
 
     virtual Eigen::VectorXd residual(){return z_ - h_;};
 
+    bool linearise();
+    
     bool update_factor();
 
     Message marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx);
+
+    private:
+    int n_since_last_relin_ = 0;
+
 };
 
 /********************************************************************************************/

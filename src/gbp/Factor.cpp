@@ -20,11 +20,14 @@
 //  - sigma: factor strength. The factor precision Lambda = sigma^-2 * Identity
 //  - measurement z: Eigen::VectorXd, must be same size as the output of the measurement function h().
 //  - n_dofs is the number of degrees of freedom of the variables this factor is connected to. (eg. 4 for [x,y,xdot,ydot])
+//  - min_lin_update is the minimum number of linear messages sent before relinearisation can occur
+//  - beta is the minimum change in adjacent variable means before triggering relinearlisation
 /*****************************************************************************************************/
 Factor::Factor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
-        float sigma, const Eigen::VectorXd& measurement, 
-        int n_dofs) 
-        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), n_dofs_(n_dofs), sigma_(sigma) {
+        float sigma, const Eigen::VectorXd& measurement, float beta, int min_lin_updates,
+        int n_dofs)
+        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), n_dofs_(n_dofs), sigma_(sigma), 
+        min_lin_updates_(min_lin_updates), beta_(beta) {
 
         // Initialise precision of the measurement function
         this->meas_model_lambda_ = Eigen::MatrixXd::Identity(z_.rows(), z_.rows()) / pow(sigma_, 2.);
@@ -94,6 +97,20 @@ Eigen::MatrixXd Factor::jacobianFirstOrder(const Eigen::VectorXd& X0){
 // The Factor potential is calculated using h_func_ and J_func_
 // The factor precision and information is created, and then marginalised to create outgoing messages to its connected variables.
 /*****************************************************************************************************/
+bool Factor::linearise(){
+    
+    // The Factor potential and linearised Factor Precision and Information is calculated using h_func_ and J_func_
+    // residual() is by default (z - h_func_(X))
+    h_ = h_func_(X_);
+    J_ = J_func_(X_);
+    this->initialised_ = true;
+    factor_lam_potential_ = J_.transpose() * meas_model_lambda_ * J_;
+    factor_eta_potential_ = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
+    n_since_last_relin_ = 0;
+    
+    return true;
+};
+
 bool Factor::update_factor(){
 
     // *Depending on the problem*, we may need to skip computation of this factor.
@@ -107,23 +124,22 @@ bool Factor::update_factor(){
     }
 
     // Messages from connected variables are aggregated.
-    // The beliefs are used to create the linearisation point X_.
+    // The beliefs are used to create the potential linearisation point new_X.
+    Eigen::VectorXd new_X(X_.size());
     int idx = 0; int n_dofs;
     for (int v=0; v<variables_.size(); v++){
         n_dofs = variables_[v]->n_dofs_;
         auto& [_, __, mu_belief] = this->inbox_[variables_[v]->key_];
-        X_(seqN(idx, n_dofs)) = mu_belief;
+        new_X(seqN(idx, n_dofs)) = mu_belief;
         idx += n_dofs;
-    }
-    
-    // The Factor potential and linearised Factor Precision and Information is calculated using h_func_ and J_func_
-    // residual() is by default (z - h_func_(X))
-    // Skip calculation of Jacobian if the factor is linear and Jacobian has already been computed once
-    h_ = h_func_(X_);
-    J_ = (this->linear_ && this->initialised_)? J_ : this->J_func_(X_);
-    this->initialised_ = true;
-    factor_lam_potential_ = J_.transpose() * meas_model_lambda_ * J_;
-    factor_eta_potential_ = (J_.transpose() * meas_model_lambda_) * (J_ * X_ + residual());
+    }       
+
+    if ((n_since_last_relin_ >= min_lin_updates_ && (X_ - new_X).norm() > beta_) || !initialised_){
+        X_ = new_X;
+        linearise();
+    } 
+
+    n_since_last_relin_ += 1;
 
     /**** Robustify with HUBER loss *****/
     double robustness_k = 1.;
@@ -134,7 +150,6 @@ bool Factor::update_factor(){
 
     factor_eta_potential_ *= robustness_k;
     factor_lam_potential_ *= robustness_k;
-
 
     //  Update factor precision and information with incoming messages from connected variables.
     int marginalisation_idx = 0;
@@ -211,7 +226,7 @@ Message Factor::marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen:
 /*****************************************************************************************************/
 ReprojectionFactor::ReprojectionFactor(int f_id, int r_id, std::vector<std::shared_ptr<Variable>> variables,
     float sigma, const Eigen::Vector2d& measurement, const Eigen::Matrix3d& K)
-    : Factor{f_id, r_id, variables, sigma, measurement}{ 
+    : Factor{f_id, r_id, variables, sigma, measurement, 0.01}{ 
         factor_type_ = DEFAULT_FACTOR;
         // linear_ = true;
         damping_ = globals.DAMPING;
