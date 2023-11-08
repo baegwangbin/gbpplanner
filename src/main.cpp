@@ -56,6 +56,8 @@ Model cframe;
 
 
 int main(int argc, char *argv[]){
+    
+    // Initialise simulation
     srand((int)globals.SEED);                                   // Initialise random seed   
     DArgs::DArgs dargs(argc, argv);                             // Parse config file argument --cfg <file.json>
     if (globals.parse_global_args(dargs)) return EXIT_FAILURE;
@@ -65,10 +67,10 @@ int main(int argc, char *argv[]){
     Image temp_img = GenImageColor(500, 500, WHITE);
     graphics = new Graphics(temp_img);
     globals.SIM_MODE = SimNone;
-    // print(MY_PATH);
 
 
-    // Read camera params
+    // Read camera params. Meas_dict contains camera ids as keys, landmark ids, and the measurements
+    // So accessing the measurement of lID 3 by camera 5 is done as measurement = meas_dict[5][3];
     auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/MH01/bal.txt"));
     // auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/V103/bal.txt"));
     K = std::get<0>(balfile_out);
@@ -79,10 +81,12 @@ int main(int argc, char *argv[]){
     
     factorgraph = std::make_shared<FactorGraph>(0);
     factorgraphs[0] = factorgraph;
+
     // Initially load 5 frames
     for (int i=0; i<5; i++) loadFrame();
     iterateGBP(5, INTERNAL, factorgraphs);
 
+    // Main loop. Press ENTER to add keyframe (Enables Timestep mode, and then LoadFrame() disables Timestep mode)
     while (globals.RUN){
         eventHandler();                // Capture keypresses or mouse events             
         if (globals.SIM_MODE == Timestep){
@@ -101,36 +105,40 @@ int main(int argc, char *argv[]){
 // Load next frame
 /*******************************************************************************/
 void loadFrame(){
-        int nf = 0;
+        int nf = 0;     // For debugging
+    // Don't do anything if we have no more camera frames
     if (next_cam_id < cam_means.size()){
 
         // Create Variable for Camera next_cam_id
         Eigen::VectorXd sigma_list_cam = Eigen::VectorXd::Constant(n_dof_cam, sigma_cam);
-        if (next_cam_id < 2) sigma_list_cam.setConstant(1e-3);
+        if (next_cam_id < 2) sigma_list_cam.setConstant(1e-3);          // Creates a sigma for each dof of the variable, sets to a prior value.
         auto variable_cam = std::make_shared<Variable>(next_vid_++, 0, cam_means[next_cam_id], sigma_list_cam, 0, n_dof_cam);
-        cam2vid[next_cam_id] = variable_cam->v_id_;
+        cam2vid[next_cam_id] = variable_cam->v_id_;                 // Useful to get the factorgraph's vid for a particular camera id.
         factorgraph->variables_[variable_cam->key_] = variable_cam;  
-        factorgraph->active_variables_.insert(variable_cam->v_id_);
+        factorgraph->active_variables_.insert(variable_cam->v_id_); // Add the variable to the active set.
 
         // Trying to keep a sliding window of 5 keyframes 
         // Deactivate old camera variable and all its connected factors.
         if (next_cam_id >= 5){
-            auto cvar = factorgraph->getVar(cam2vid[cam_iter]);
+            auto cvar = factorgraph->getVar(cam2vid[cam_iter]);     // Variables can be accessed by factorgraph->getVar(vid)
             print("Deactivating camera ", cam_iter);
             // cvar->active_ = false;
             // factorgraph->active_variables_.erase(cvar->v_id_);
+            // For all factors connected to the camera variable, set them to be inactive, and remove from active set.
+            // Also set their connected variables to inactive and remove them from active set too.
             for (auto [fid, fac] : cvar->factors_){
                 fac->active_ = false;
                 factorgraph->active_factors_.erase(fac->f_id_);
                 for (auto var : fac->variables_){
                     var->active_ = false;
                     factorgraph->active_variables_.erase(var->v_id_);
-                    // inactive_vars[var->v_id_] = var;
                 }
             }
             cam_iter++; 
         }
 
+        // Here we create a variable for a particular lmk_id measurement, IF it has not been created before. It is not active though
+        // until it has at least 3 reporjection factors connected to it.
         for (auto [lmk_id, meas] : meas_dict[next_cam_id]){
             // If this lmk_id has not had a variable created for it:
             if (!lmk2vid.count(lmk_id)){
@@ -149,7 +157,7 @@ void loadFrame(){
                 variable_lmk->update_belief();
             }
 
-            // Create reproj factor
+            // Create reproj factor (but dont activate)
             auto variable_landmark = factorgraph->getVar(lmk2vid.at(lmk_id));
             std::vector<std::shared_ptr<Variable>> variables {variable_cam, variable_landmark};
             Eigen::Vector2d z = meas;
@@ -165,6 +173,8 @@ void loadFrame(){
         next_cam_id++;
     }
 
+    // Go through inactive_vars (this should only contain variables that have not had 3 factors connected to them yet.)
+    // Currently I don't account for variables that are not in the active set... so currently inactive_vars only contain NEW variables.
     for (auto it = inactive_vars.cbegin(), next_it = it; it != inactive_vars.cend(); it = next_it){
         ++next_it;
         auto [vid, var] = *it;
