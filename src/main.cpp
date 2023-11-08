@@ -29,6 +29,7 @@ void draw();
 void drawCameraVar(std::shared_ptr<Variable> cam_var);
 void drawLandmarkVar(std::shared_ptr<Variable> lmk_var);
 void drawWorldFrame();
+double compute_ARE(std::shared_ptr<FactorGraph> factorgraph);
 int next_cam_id = 0;
 int next_vid_ = 0;
 int next_fid_ = 0;
@@ -37,7 +38,7 @@ int LMK_ID_OFFSET = 0;
 int n_dof_lmk = 3;
 int n_dof_cam = 6;
 double sigma_lmk = 1;
-double sigma_cam = 0.5;
+double sigma_cam = 0.1;
 double sigma_reproj = 2.;
 std::vector<Eigen::VectorXd> cam_means;
 std::vector<Eigen::VectorXd> lmk_means;
@@ -84,8 +85,11 @@ int main(int argc, char *argv[]){
 
     while (globals.RUN){
         eventHandler();                // Capture keypresses or mouse events             
-        if (globals.SIM_MODE == Timestep) loadFrame();
+        if (globals.SIM_MODE == Timestep){
+            loadFrame();
+        }
         iterateGBP(5, INTERNAL, factorgraphs);
+        compute_ARE(factorgraph);
         draw();
     }
 
@@ -106,18 +110,24 @@ void loadFrame(){
         auto variable_cam = std::make_shared<Variable>(next_vid_++, 0, cam_means[next_cam_id], sigma_list_cam, 0, n_dof_cam);
         cam2vid[next_cam_id] = variable_cam->v_id_;
         factorgraph->variables_[variable_cam->key_] = variable_cam;  
+        factorgraph->active_variables_.insert(variable_cam->v_id_);
 
         // Trying to keep a sliding window of 5 keyframes 
+        // Deactivate old camera variable and all its connected factors.
         if (next_cam_id >= 5){
             auto cvar = factorgraph->getVar(cam2vid[cam_iter]);
-            cvar->active_ = false;
-            std::vector<Key> facs_to_delete{};
-            for (auto [fid, fac] : cvar->factors_) facs_to_delete.push_back(fac->key_);
-            for (auto f : facs_to_delete){
-                cvar->delete_factor(f);
-                factorgraph->factors_.erase(f);
+            print("Deactivating camera ", cam_iter);
+            // cvar->active_ = false;
+            // factorgraph->active_variables_.erase(cvar->v_id_);
+            for (auto [fid, fac] : cvar->factors_){
+                fac->active_ = false;
+                factorgraph->active_factors_.erase(fac->f_id_);
+                for (auto var : fac->variables_){
+                    var->active_ = false;
+                    factorgraph->active_variables_.erase(var->v_id_);
+                    // inactive_vars[var->v_id_] = var;
+                }
             }
-
             cam_iter++; 
         }
 
@@ -144,11 +154,9 @@ void loadFrame(){
             std::vector<std::shared_ptr<Variable>> variables {variable_cam, variable_landmark};
             Eigen::Vector2d z = meas;
             auto factor = std::make_shared<ReprojectionFactor>(next_fid_++, 0, variables, sigma_reproj, z, K);
-            nf++;
             // Set factor inactive
-
             factor->active_ = false;
-            factor->skip_flag = true;
+            nf++;
             
             // Add this factor to the variable's list of adjacent factors, as well as to the factorgraph
             for (auto var : factor->variables_) var->add_factor(factor);
@@ -161,29 +169,31 @@ void loadFrame(){
         ++next_it;
         auto [vid, var] = *it;
         if (var->factors_.size()>2){
-            // Now we are activating the variable, set it's mu to the average distance of the first cam that saw it.
-            auto oldest_cam = var->factors_.begin()->second->variables_[0];
-            Eigen::MatrixXd Rcw = so3exp(oldest_cam->mu_({3,4,5}));
-            Eigen::Matrix4d Twc; Twc << so3exp(oldest_cam->mu_({3,4,5})), -1.*Rcw.transpose() * oldest_cam->mu_({0,1,2}),
-                                        0., 0., 0., 1.;
-            double init_depth = 0.; int cnt = 0;
-            for (auto [fid, fac] : oldest_cam->factors_){
-                if (!fac->active_) continue;
-                init_depth += (fac->variables_[1]->mu_ - Twc({0,1,2},3)).norm();
-                cnt++;
-            }
-            if (cnt>0){
-                init_depth = init_depth / (float)cnt;
-                Eigen::Vector3d meas_homogeneous; meas_homogeneous << var->factors_.begin()->second->z_, 1.;
-                Eigen::Vector4d pc_homog; pc_homog << (K.inverse() * meas_homogeneous).normalized() * (init_depth + 0.1 * rand()/(float)RAND_MAX * init_depth), 1.;
-                Eigen::VectorXd pw = Twc * pc_homog;
-                Eigen::Vector3d new_mu = pw({0,1,2});
-                var->change_variable_prior(new_mu);
-            }
+            // // Now we are activating the variable, set it's mu to the average distance of the first cam that saw it.
+            // auto oldest_cam = var->factors_.begin()->second->variables_[0];
+            // Eigen::MatrixXd Rcw = so3exp(oldest_cam->mu_({3,4,5}));
+            // Eigen::Matrix4d Twc; Twc << so3exp(oldest_cam->mu_({3,4,5})), -1.*Rcw.transpose() * oldest_cam->mu_({0,1,2}),
+            //                             0., 0., 0., 1.;
+            // double init_depth = 0.; int cnt = 0;
+            // for (auto [fid, fac] : oldest_cam->factors_){
+            //     // if (!fac->active_) continue;
+            //     init_depth += (fac->variables_[1]->mu_ - Twc({0,1,2},3)).norm();
+            //     cnt++;
+            // }
+            // if (cnt>0){
+            //     init_depth = init_depth / (float)cnt;
+            //     Eigen::Vector3d meas_homogeneous; meas_homogeneous << var->factors_.begin()->second->z_, 1.;
+            //     Eigen::Vector4d pc_homog; pc_homog << (K.inverse() * meas_homogeneous).normalized() * (init_depth + 0.1 * rand()/(float)RAND_MAX * init_depth), 1.;
+            //     Eigen::VectorXd pw = Twc * pc_homog;
+            //     Eigen::Vector3d new_mu = pw({0,1,2});
+            //     var->change_variable_prior(new_mu);
+            // }
             var->active_ = true;
+            factorgraph->active_variables_.insert(var->v_id_);
             for (auto [fid, fac] : var->factors_){
+                factorgraph->active_factors_.insert(fac->f_id_);
                 fac->active_ = true;
-                fac->skip_flag = false;
+                // fac->skip_flag = false;
             }
             inactive_vars.erase(it);
         } else {
@@ -191,7 +201,8 @@ void loadFrame(){
         }
     }
     globals.SIM_MODE  = (globals.SIM_MODE==Timestep) ? SimNone : SimNone;
-    print("FACTORS: ", factorgraph->factors_.size(), "new: ", nf);
+    print("Active variables: ", factorgraph->active_variables_.size(), "new: ", nf);
+    print("Active factors: ", factorgraph->active_factors_.size(), "new: ", nf);
 
 }
 /*******************************************************************************/
@@ -277,4 +288,18 @@ void eventHandler(){
 
     // Update the graphics if the camera has moved
     graphics->update_camera();
+}
+
+double compute_ARE(std::shared_ptr<FactorGraph> factorgraph){
+    double are = 0.;
+    double cnt = (double)factorgraph->active_factors_.size();
+    if (cnt>0){
+        for (auto fid : factorgraph->active_factors_){
+            are += factorgraph->factors_.at(Key{0, fid})->residual().norm();
+        }
+        are /= cnt;
+    }
+    
+    print("ARE: ", are, cnt);
+    return are;
 }
