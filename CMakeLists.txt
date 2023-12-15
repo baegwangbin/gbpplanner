@@ -11,6 +11,7 @@ project(GBPPlanner)
 add_compile_definitions(EIGEN_DONT_PARALLELIZE)
 find_package(OpenMP REQUIRED)
 add_subdirectory(thirdparty/raylib)
+add_subdirectory(thirdparty/manif)
 
 #################################################################
 set(GBPPLANNER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/")

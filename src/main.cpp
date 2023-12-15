@@ -18,7 +18,13 @@
 #include <Eigen/Geometry>
 #include <map>
 #include <gbp/lie_algebra.h>
-
+#include <any>
+#include <tuple>
+#include <variant>
+#include <typeinfo>
+#include <typeindex>
+#include <manif/manif.h>
+#include "manif/Bundle.h"
 Globals globals;
 Graphics* graphics;
 std::map<int, std::shared_ptr<FactorGraph>> factorgraphs{};
@@ -33,6 +39,7 @@ int next_cam_id = 0;
 int next_vid_ = 0;
 int next_fid_ = 0;
 int LMK_ID_OFFSET = 0;
+
 
 int n_dof_lmk = 3;
 int n_dof_cam = 6;
@@ -49,10 +56,14 @@ int cam_iter = 0;
 
 Eigen::MatrixXd K;
 
-
 Model cframe;
 
-
+int next_vid = 0;
+int next_fid = 0;
+double sigma_prior = 1.;
+double sigma_smoothness = 0.01;
+std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> all_variables{};
+std::vector<std::shared_ptr<FactorLie<manif::SE2d, manif::SE2d>>> all_factors{};
 
 int main(int argc, char *argv[]){
     srand((int)globals.SEED);                                   // Initialise random seed   
@@ -64,7 +75,76 @@ int main(int argc, char *argv[]){
     Image temp_img = GenImageColor(500, 500, WHITE);
     graphics = new Graphics(temp_img);
     globals.SIM_MODE = SimNone;
-    // print(MY_PATH);
+
+    /////////////////////////////////////////////////////////////////
+    // Create variables
+    int v1_id = next_vid++;
+    Eigen::VectorXd siglist{{1., 1., 1.}};
+    auto v1 = std::make_shared<VariableLie<manif::SE2d>>(v1_id, 0, siglist);
+    all_variables.push_back(v1);
+
+    // Add prior on pose
+    int v1_prior_id = next_fid++;
+    auto v1_prior_state = manif::SE2d(8., 8., 10*DEG2RAD);
+    auto f1 = std::make_shared<PriorFactorSE2d>(v1_prior_id, 0, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>>{v1}, 0.001*1.*sigma_prior, v1_prior_state);
+    all_factors.push_back(f1);
+    v1->add_factor(f1);
+
+    int v2_id = next_vid++;
+    auto v2 = std::make_shared<VariableLie<manif::SE2d>>(v2_id, 0, siglist);
+    all_variables.push_back(v2);
+
+    // Add prior on pose
+    int v2_prior_id = next_fid++;
+    auto v2_prior_state = manif::SE2d(8., 8., -10.*DEG2RAD);
+    auto f2 = std::make_shared<PriorFactorSE2d>(v2_prior_id, 0, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>>{v2}, 1.*sigma_prior, v2_prior_state);
+    all_factors.push_back(f2);
+    v2->add_factor(f2);
+    /////////////////////////////////////////////////////////////////
+    
+    int f12_id = next_fid++;
+    std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables {v1, v2};
+    manif::SE2d measurement(0., 0., PI/4.);
+    auto f12 = std::make_shared<AngleDifferenceFactorSE2d>(f12_id, 0, variables, sigma_smoothness, measurement);
+    all_factors.push_back(f12);
+    for (auto v : variables){
+        v->add_factor(f12);
+    }
+
+
+for (int i=0; i<10; i++){
+
+    for (int iter=0; iter<10; iter++){
+        for (int f_idx=0; f_idx<all_factors.size(); f_idx++){
+            auto fac = all_factors[f_idx];
+            for (auto var : fac->variables_){
+                // Read message from each connected variable
+                fac->inbox_[var->key_] = var->outbox_.at(fac->key_);
+            }
+            // Calculate factor potential and create outgoing messages
+            fac->update_factor();
+        };    
+        for (int v_idx=0; v_idx<all_variables.size(); v_idx++){
+            auto var = all_variables[v_idx];
+            for (auto [f_key, fac] : var->factors_){
+                // Read message from each connected factor
+                var->inbox_[f_key] = std::any_cast<MessageLie<decltype(var->state_)>>(fac->outbox_.at(var->key_));
+            }
+            // Update variable belief and create outgoing messages
+            var->update_belief();
+        };   
+        if (iter<9) continue;
+        print("Iteration:", iter);         
+        print("pos 1:", iter, v1->state_.translation().eval().transpose(), v1->state_.angle() * RAD2DEG);
+        print("pos 2:", iter, v2->state_.translation().eval().transpose(), v2->state_.angle() * RAD2DEG);
+        print("")  ;
+    }
+    double angle = f1->z_.angle() + 45.*DEG2RAD;
+    f1->z_ = manif::SE2d(8., 8., angle);
+}
+
+
+    return 0;
 
 
     // Read camera params
