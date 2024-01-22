@@ -17,9 +17,9 @@ Graphics::Graphics(Image obstacleImg) : obstacleImg_(ImageCopy(obstacleImg)){
 
     // Camera is defined by a forward vector (target - position), as well as an up vector (see raylib for more info)
     // These are vectors for each camera transition. Cycle through them in the simulation with the SPACEBAR
-    camera_positions_ = {Vector3{-0.5,1., -0.5}};
-    camera_ups_ = {Vector3{0.,1.,0.}};
-    camera_targets_ = {Vector3{1.,0.,1.}};
+    camera_positions_ = {Vector3{0.,10., 0.}};
+    camera_ups_ = {Vector3{0.,0.,-1.}};
+    camera_targets_ = {Vector3{0.,0.,0.}};
 
     camera3d.position = camera_positions_[camera_idx_];
     camera3d.target = camera_targets_[camera_idx_];

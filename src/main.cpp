@@ -60,12 +60,14 @@ Model cframe;
 
 int next_vid = 0;
 int next_fid = 0;
-double sigma_prior = 1.;
-double sigma_smoothness = 0.01;
-std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> all_variables{};
-std::vector<std::shared_ptr<FactorLie<manif::SE2d, manif::SE2d>>> all_factors{};
+double sigma_prior = 10.;
+double sigma_smoothness = 0.001;
+std::vector<std::shared_ptr<VariableLie>> all_variables{};
+std::vector<std::shared_ptr<FactorLie>> all_factors{};
+
 
 int main(int argc, char *argv[]){
+
     srand((int)globals.SEED);                                   // Initialise random seed   
     DArgs::DArgs dargs(argc, argv);                             // Parse config file argument --cfg <file.json>
     if (globals.parse_global_args(dargs)) return EXIT_FAILURE;
@@ -78,94 +80,119 @@ int main(int argc, char *argv[]){
 
     /////////////////////////////////////////////////////////////////
     // Create variables
+    int num_intermediate_vars = 10;
     int v1_id = next_vid++;
+    int _rid = 1;
     Eigen::VectorXd siglist{{1., 1., 1.}};
-    auto v1 = std::make_shared<VariableLie<manif::SE2d>>(v1_id, 0, siglist);
+    // auto v1 = std::make_shared<VariableLie>(LieType::SO2d, v1_id, _rid, siglist);
+    auto v1 = std::make_shared<VariableLie>(LieType::SE2d, v1_id, _rid, siglist);
     all_variables.push_back(v1);
 
     // Add prior on pose
     int v1_prior_id = next_fid++;
-    auto v1_prior_state = manif::SE2d(8., 8., 10*DEG2RAD);
-    auto f1 = std::make_shared<PriorFactorSE2d>(v1_prior_id, 0, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>>{v1}, 0.001*1.*sigma_prior, v1_prior_state);
+    auto v1_prior_state = manif::SE2d(0.,0., 0*DEG2RAD).coeffs();
+    auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2d);
+    // auto v1_prior_state = manif::SO2d(350*DEG2RAD).coeffs();
+    // auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 0.001*1.*sigma_prior, v1_prior_state, LieType::SO2d);
     all_factors.push_back(f1);
-    v1->add_factor(f1);
+    v1->add_factor(f1, true);
+
+    for (int i=0; i<num_intermediate_vars; i++){
+        int vid = next_vid++;
+        auto var = std::make_shared<VariableLie>(LieType::SE2d, vid, _rid, siglist);
+        all_variables.push_back(var);
+
+        // Add prior on pose
+        int v_p_id = next_fid++;
+        auto v_prior_state = manif::SE2d(0., 0., 0.*DEG2RAD).coeffs();
+        auto f2 = std::make_shared<PriorFactor>(v_p_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var}, 10.*sigma_prior, v_prior_state, LieType::SE2d);
+        all_factors.push_back(f2);
+        var->add_factor(f2, true);
+    }
 
     int v2_id = next_vid++;
-    auto v2 = std::make_shared<VariableLie<manif::SE2d>>(v2_id, 0, siglist);
+    // auto v2 = std::make_shared<VariableLie>(LieType::SO2d,v2_id, _rid, siglist);
+    auto v2 = std::make_shared<VariableLie>(LieType::SE2d,v2_id, _rid, siglist);
     all_variables.push_back(v2);
 
     // Add prior on pose
     int v2_prior_id = next_fid++;
-    auto v2_prior_state = manif::SE2d(8., 8., -10.*DEG2RAD);
-    auto f2 = std::make_shared<PriorFactorSE2d>(v2_prior_id, 0, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>>{v2}, 1.*sigma_prior, v2_prior_state);
+    auto v2_prior_state = manif::SE2d(4., 0., 180*DEG2RAD).coeffs();
+    auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1e-10*sigma_prior, v2_prior_state, LieType::SE2d);
+    // auto v2_prior_state = manif::SO2d(10*DEG2RAD).coeffs();
+    // auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1.*sigma_prior, v2_prior_state, LieType::SO2d);
     all_factors.push_back(f2);
-    v2->add_factor(f2);
-    /////////////////////////////////////////////////////////////////
+    v2->add_factor(f2, true);
+    // /////////////////////////////////////////////////////////////////
     
-    int f12_id = next_fid++;
-    std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables {v1, v2};
-    manif::SE2d measurement(0., 0., PI/4.);
-    auto f12 = std::make_shared<AngleDifferenceFactorSE2d>(f12_id, 0, variables, sigma_smoothness, measurement);
-    all_factors.push_back(f12);
-    for (auto v : variables){
-        v->add_factor(f12);
+    // int f12_id = next_fid++;
+    // std::vector<std::shared_ptr<VariableLie>> _variables {v1, v2};
+    // auto measurement = manif::SE2d(0., 0., PI/4.).coeffs();
+    // auto f12 = std::make_shared<AngleDifferenceFactorSE2d>(f12_id, 0, _variables, sigma_smoothness, measurement);
+    // all_factors.push_back(f12);
+    // for (auto v : _variables){
+    //     v->add_factor(f12);
+    // };
+    for (int ii=0; ii<num_intermediate_vars+1; ii++){
+        int f12_id = next_fid++;
+        std::vector<std::shared_ptr<VariableLie>> variables {all_variables[ii], all_variables[ii+1]};
+        auto measurement = manif::SE2d(0.,0.,0.).coeffs();
+        float sig = 1e0;
+        auto f12 = std::make_shared<SmoothnessFactor>(f12_id, _rid, variables, sig, measurement, LieType::SE2d);
+        all_factors.push_back(f12);
+        for (auto v : variables){
+            v->add_factor(f12);
+        };
     }
-
-
-for (int i=0; i<10; i++){
-
-    for (int iter=0; iter<10; iter++){
-        for (int f_idx=0; f_idx<all_factors.size(); f_idx++){
-            auto fac = all_factors[f_idx];
-            for (auto var : fac->variables_){
-                // Read message from each connected variable
-                fac->inbox_[var->key_] = var->outbox_.at(fac->key_);
-            }
-            // Calculate factor potential and create outgoing messages
-            fac->update_factor();
-        };    
-        for (int v_idx=0; v_idx<all_variables.size(); v_idx++){
-            auto var = all_variables[v_idx];
-            for (auto [f_key, fac] : var->factors_){
-                // Read message from each connected factor
-                var->inbox_[f_key] = std::any_cast<MessageLie<decltype(var->state_)>>(fac->outbox_.at(var->key_));
-            }
-            // Update variable belief and create outgoing messages
-            var->update_belief();
-        };   
-        if (iter<9) continue;
-        print("Iteration:", iter);         
-        print("pos 1:", iter, v1->state_.translation().eval().transpose(), v1->state_.angle() * RAD2DEG);
-        print("pos 2:", iter, v2->state_.translation().eval().transpose(), v2->state_.angle() * RAD2DEG);
-        print("")  ;
-    }
-    double angle = f1->z_.angle() + 45.*DEG2RAD;
-    f1->z_ = manif::SE2d(8., 8., angle);
-}
-
-
-    return 0;
-
-
-    // Read camera params
-    // auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/MH01/bal.txt"));
-    auto balfile_out = read_balfile(GBPPLANNER_DIR + std::string("../bundle_adjustment/data/V103/bal.txt"));
-    K = std::get<0>(balfile_out);
-    cam_means = std::get<1>(balfile_out);
-    lmk_means = std::get<2>(balfile_out);
-    meas_dict = std::get<3>(balfile_out);
-    LMK_ID_OFFSET = cam_means.size();
-    
-    factorgraph = std::make_shared<FactorGraph>(0);
-    factorgraphs[0] = factorgraph;
 
     while (globals.RUN){
-        eventHandler();                // Capture keypresses or mouse events             
-        if (globals.SIM_MODE == Timestep) loadFrame();
-        // if (globals.SIM_MODE == Iterate) iterateGBP(5, INTERNAL, factorgraphs);
-        iterateGBP(5, INTERNAL, factorgraphs);
-        draw();
+        for (int iter=0; iter<10; iter++){
+            for (int f_idx=0; f_idx<all_factors.size(); f_idx++){
+                auto fac = all_factors[f_idx];
+                for (auto var : fac->variables_){
+                    // Read message from each connected variable
+                    fac->inbox_[var->key_] = var->outbox_.at(fac->key_);
+                }
+                // Calculate factor potential and create outgoing messages
+                fac->update_factor();
+            };    
+            for (int v_idx=0; v_idx<all_variables.size(); v_idx++){
+                auto var = all_variables[v_idx];
+                for (auto [f_key, fac] : var->factors_){
+                    // Read message from each connected factor
+                    var->inbox_[f_key] = fac->outbox_.at(var->key_);
+                }
+                // Update variable belief and create outgoing messages
+                var->update_belief();
+            };   
+            if (iter<9) continue;
+            print("Iteration:", iter);         
+            print("pos 1:", iter, manif::SE2d(v1->state_).translation().eval().transpose(), manif::SE2d(v1->state_).angle() * RAD2DEG);
+            print("pos 2:", iter, manif::SE2d(v2->state_).translation().eval().transpose(), manif::SE2d(v2->state_).angle() * RAD2DEG);
+            // print("pos 1:", iter, manif::SO2d(v1->state_).angle() * RAD2DEG);
+            // print("pos 2:", iter, manif::SO2d(v2->state_).angle() * RAD2DEG);
+        }
+        
+        eventHandler();
+        BeginDrawing();
+            ClearBackground(RAYWHITE);
+            BeginMode3D(graphics->camera3d);
+                // Draw Ground
+                for (auto var : all_variables){
+                    auto pos = manif::SE2d(var->state_).translation();
+                    DrawModel(graphics->landmarkModel_,
+                            Vector3{(float)pos(0), (float)0.5, (float)pos(1)}, 0.1f, RED);
+                    float angle = manif::SE2d(var->state_).angle();
+                    float len = 0.2f;
+                    DrawLine3D(Vector3{(float)pos(0), (float)0.5, (float)pos(1)},
+                            Vector3{(float)pos(0) + 1.f*len*cos(angle), (float)0.5, (float)pos(1) + len*sin(angle)}, BLACK);
+                }
+                // Draw Robots
+            EndMode3D();
+        EndDrawing();  
+
     }
+
 
     CloseWindow();
     return 0;
@@ -320,6 +347,22 @@ void eventHandler(){
             globals.SIM_MODE  = (globals.SIM_MODE==Timestep) ? SimNone : Timestep;  break;
     case KEY_I:
             globals.SIM_MODE  = (globals.SIM_MODE==Iterate) ? SimNone : Iterate;  print("Iterating "); break;
+    case KEY_RIGHT:
+    case KEY_LEFT:
+            all_variables.back()->prior_factor_->z_(0) += 0.1 * (2 * (int)(key==KEY_RIGHT) - 1);
+        break;
+    case KEY_DOWN:
+    case KEY_UP:
+            all_variables.back()->prior_factor_->z_(1) += 0.1 * (2 * (int)(key==KEY_DOWN) - 1);
+        break;
+    case KEY_LEFT_BRACKET:
+    case KEY_RIGHT_BRACKET:
+    {
+            auto tau = Log(all_variables.back()->prior_factor_->z_, LieType::SE2d);
+            tau(2) += 0.1 * (2 * (int)(key==KEY_RIGHT_BRACKET) - 1);
+            all_variables.back()->prior_factor_->z_ = Exp(tau, LieType::SE2d);
+    }
+        break;
             
     default:
         break;

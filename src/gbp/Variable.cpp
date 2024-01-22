@@ -117,62 +117,47 @@ void Variable::draw(bool filled){
 }
 
 
-template <class LieGroupType>
-VariableLie<LieGroupType>::VariableLie(int v_id, int r_id, const Eigen::VectorXd& sigma_prior_list) : VariableLieBase{},
-                            v_id_(v_id), r_id_(r_id), key_(Key(r_id, v_id)) {
-                                auto t = std::type_index(typeid(std::shared_ptr<LieGroupType>));
-                                VariableLieBase::typecode_ = std::type_index(typeid(std::shared_ptr<LieGroupType>)).hash_code();
-
+VariableLie::VariableLie(LieType lietype, int v_id, int r_id, const Eigen::VectorXd& sigma_prior_list) :
+                            lietype_(lietype), v_id_(v_id), r_id_(r_id), key_(Key(r_id, v_id)) {
+        n_dofs_ = lie_ndofs[lietype_];
+        state_ = lie_identity_coeffs(lietype_);
+        eta_ = Eigen::VectorXd::Zero(n_dofs_);                               // Information vector of variable's belief
+        lam_ = Eigen::MatrixXd::Zero(n_dofs_, n_dofs_);                            
+        zero_msg_ = MessageLie(n_dofs_);                                
 };
 
-void VariableLieBase::init(){
-    print("Init base");
-}
-template <class LieGroupType>
-void VariableLie<LieGroupType>::init(){
-    print("Init derived");
-}
-template <class LieGroupType>
-void VariableLie<LieGroupType>::update_belief(){
+void VariableLie::update_belief(){
     // Collect messages from all other factors, begin by "collecting message from pose factor prior"
     eta_.setZero();
     lam_.setZero();
 
     for (auto& [f_key, msg] : inbox_) {
-        auto [X_in, lam_msg] = msg;
-        LieGroupTangentType tau = X_in - state_;
-        Eigen::MatrixXd Lambda = tau.rjac().transpose() * lam_msg * tau.rjac();
-        eta_ += Lambda * tau.coeffs();
+        auto [X_in, lam_msg, _] = msg;
+        Eigen::VectorXd tau = rightminus(X_in, state_, lietype_);
+        Eigen::MatrixXd Lambda = rjac(tau, lietype_).transpose() * lam_msg * rjac(tau, lietype_);
+        eta_ += Lambda * tau;
         lam_ += Lambda;
     }
 
     // Create message to send to each factor that sent it stuff
     // msg is the aggregate of all OTHER factor messages (belief - last sent msg of that factor)
     for (auto [f_key, fac] : factors_) {
-        auto [X_in, lam_msg] = inbox_.at(f_key);
-        LieGroupTangentType tau = X_in - state_;
-        Eigen::MatrixXd L_msg_in = tau.rjac().transpose() * lam_msg * tau.rjac();
-        Eigen::VectorXd eta_out = eta_ - L_msg_in * tau.coeffs();
+        auto [X_in, lam_msg, _] = inbox_.at(f_key);
+        Eigen::VectorXd tau = rightminus(X_in, state_, lietype_);
+        Eigen::MatrixXd L_msg_in = rjac(tau, lietype_).transpose() * lam_msg * rjac(tau, lietype_);
+        Eigen::VectorXd eta_out = eta_ - L_msg_in * tau;
         Eigen::MatrixXd L_out = lam_ - L_msg_in;
-        LieGroupTangentType tau_out(L_out.colPivHouseholderQr().solve(eta_out));     
-        outbox_[f_key] = MessageLie<LieGroupType>(state_ + tau_out, tau_out.rjacinv().transpose() * L_out * tau_out.rjacinv());
+        Eigen::VectorXd tau_out = L_out.colPivHouseholderQr().solve(eta_out); 
+        outbox_[f_key] = MessageLie(rightplus(state_, tau_out, lietype_), rjacinv(tau_out, lietype_).transpose() * L_out * rjacinv(tau_out, lietype_));
     }
 
-    LieGroupTangentType tau(lam_.colPivHouseholderQr().solve(eta_));
-    this->state_ += tau;
+    Eigen::VectorXd tau = lam_.colPivHouseholderQr().solve(eta_); 
+    this->state_ = rightplus(state_, tau, lietype_);
 }
 
-template <class LieGroupType>
-void VariableLie<LieGroupType>::add_factor(std::shared_ptr<FactorLie<LieGroupType, LieGroupType>> fac){
+void VariableLie::add_factor(std::shared_ptr<FactorLie> fac, bool is_prior){
+    if (is_prior) prior_factor_ = fac;
     factors_[fac->key_] = fac;
-    inbox_[fac->key_] = MessageLie<LieGroupType>();
-    outbox_[fac->key_] = MessageLie<LieGroupType>(state_, lam_);
+    inbox_[fac->key_] = MessageLie(lie_ndofs[lietype_]);
+    outbox_[fac->key_] = MessageLie(state_, lam_);
 }
-template <class LieGroupType>
-void VariableLie<LieGroupType>::temp(){
-}
-
-template class VariableLie<manif::SE2d>;
-template class VariableLie<manif::SE3d>;
-template class VariableLie<manif::SO2d>;
-template class VariableLie<manif::SO3d>;

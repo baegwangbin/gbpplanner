@@ -9,6 +9,7 @@
 #include <Utils.h>
 #include <gbp/GBPCore.h>
 #include <gbp/lie_algebra.h>
+#include <gbp/Variable.h>
 #include <manif/SE2.h>
 #include <manif/SO2.h>
 #include <raylib.h>
@@ -22,7 +23,9 @@ using Eigen::seqN;
 using Eigen::seq;
 using Eigen::last;
 
-class Variable;     // Forward declaration
+
+
+// class Variable;     // Forward declaration
 
 // Types of factors defined. Default is DEFAULT_FACTOR
 enum FactorType {DEFAULT_FACTOR, DYNAMICS_FACTOR, INTERROBOT_FACTOR, OBSTACLE_FACTOR};
@@ -82,96 +85,6 @@ class Factor {
     Message marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx);
 };
 
-template<class MeasType, class VarsType>
-class FactorLie {
-    public:
-    int f_id_;                                  // Factor id
-    int r_id_;                                  // Robot id this factor belongs to
-    Key key_;                                   // Factor key = {r_id_, f_id_}
-    int other_rid_;                             // id of other connected robot (if this is an inter-robot factor)
-    Eigen::MatrixXd meas_model_lambda_;         // Precision of measurement model
-    std::vector<VarsType> lin_point_{}; 
-    MeasType z_;    
-    manif::SE2d dummy_variable_;    
-    FactorType factor_type_ = DEFAULT_FACTOR; 
-    bool initialised_ = false;                  // Becomes true when Jacobian calculated for the first time
-    bool linear_ = false;                       // True is factor is linear (avoids recomputation of Jacobian)
-    bool skip_flag = false;                          // Flag to skip factor update if required
-    virtual bool skip_factor(){                 // Default function to set skip flag
-        return skip_flag;
-    };
-    double mahalanobis_threshold_ = 2.;
-    double sigma_;
-    bool robust_flag_ = false;
-    double adaptive_gauss_noise_var_;
-    std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables_{};    // Vector of pointers to the connected variables. Order of variables matters
-    bool active_ = true;
-    double damping_ = 0.;
-
-    MailboxLieFactor<VarsType> inbox_, outbox_, last_outbox_;
-    // Temporary trial for tuple holding multiple elements
-    std::tuple<std::shared_ptr<VariableLie<manif::SO3d>>, std::shared_ptr<VariableLie<manif::SE2d>>> items;
-
-
-    // Function declarations
-    FactorLie(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, MeasType measurement);
-
-    ~FactorLie();
-
-    virtual std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian() = 0;
-    // void draw();
-    bool update_factor();
-
-    std::pair<Eigen::VectorXd, Eigen::MatrixXd> marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx);
-
-    using LieGroupType = decltype(dummy_variable_);
-    using LieGroupTangentType = typename LieGroupType::Tangent;
-};
-
-/********************************************************************************************/
-/********************************************************************************************/
-//                      CUSTOM FACTORS SPECIFIC TO THE PROBLEM
-// Create a new factor definition as shown with these examples.
-// You may create a new factor_type_, in the enum in Factor.h (optional, default type is DEFAULT_FACTOR)
-// Create a measurement function h_func_() and optionally Jacobian J_func_().
-
-/********************************************************************************************/
-/* Prior SE2d factor */
-/*****************************************************************************************************/
-class PriorFactorSE2d: public FactorLie<manif::SE2d, manif::SE2d> {
-    public:
-
-    PriorFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SE2d measurement);
-
-    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
-
-};
-/********************************************************************************************/
-/* Angle Difference SE2d factor */
-/*****************************************************************************************************/
-class AngleDifferenceFactorSE2d: public FactorLie<manif::SE2d, manif::SE2d> {
-    public:
-    Eigen::MatrixXd K_;
-
-    AngleDifferenceFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SE2d measurement);
-
-    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
-
-};
-
-class AngleDifferenceFactorSE2dtemp: public FactorLie<manif::SO2d, manif::SE2d> {
-    public:
-    Eigen::MatrixXd K_;
-
-    AngleDifferenceFactorSE2dtemp(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SO2d measurement);
-
-    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
-
-};
 
 /********************************************************************************************/
 /* Reprojection factor */
@@ -238,5 +151,89 @@ class ObstacleFactor: public Factor {
         float sigma, const Eigen::VectorXd& measurement, Image* p_obstacleImage);
 
     Eigen::MatrixXd h_func_(const Eigen::VectorXd& X);
+
+};
+
+
+
+//
+class FactorLie {
+    public:
+    std::vector<LieType> lietypes_{};
+    LieType measurement_lietype_;
+    int f_id_;                                  // Factor id
+    int r_id_;                                  // Robot id this factor belongs to
+    Key key_;                                   // Factor key = {r_id_, f_id_}
+    int other_rid_;                             // id of other connected robot (if this is an inter-robot factor)
+    Eigen::MatrixXd meas_model_lambda_;         // Precision of measurement model
+    std::vector<Eigen::VectorXd> lin_point_{}; 
+    Eigen::VectorXd z_;    
+    FactorType factor_type_ = DEFAULT_FACTOR; 
+    bool initialised_ = false;                  // Becomes true when Jacobian calculated for the first time
+    bool linear_ = false;                       // True is factor is linear (avoids recomputation of Jacobian)
+    bool skip_flag = false;                          // Flag to skip factor update if required
+    virtual bool skip_factor(){                 // Default function to set skip flag
+        return skip_flag;
+    };
+    double mahalanobis_threshold_ = 2.;
+    double sigma_;
+    bool robust_flag_ = false;
+    double adaptive_gauss_noise_var_;
+    std::vector<std::shared_ptr<VariableLie>> variables_{};    // Vector of pointers to the connected variables. Order of variables matters
+    bool active_ = true;
+    double damping_ = 0.;
+
+    MailboxLie inbox_, outbox_, last_outbox_;
+
+
+    // Function declarations
+    FactorLie(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType measurement_lietype);
+
+    ~FactorLie();
+
+    virtual std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian() = 0;
+    // void draw();
+    bool update_factor();
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx);
+
+};
+/********************************************************************************************/
+/* Prior SE2d factor */
+/*****************************************************************************************************/
+class PriorFactor: public FactorLie {
+    public:
+    int n_dofs_;
+
+    PriorFactor(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType lietype);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
+
+};
+/********************************************************************************************/
+/* Smoothness factor */
+/*****************************************************************************************************/
+class SmoothnessFactor: public FactorLie {
+    public:
+    int n_dofs_;
+
+    SmoothnessFactor(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType lietype);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
+
+};
+/********************************************************************************************/
+/* Angle Difference SE2d factor */
+/*****************************************************************************************************/
+class AngleDifferenceFactorSE2d: public FactorLie {
+    public:
+
+    AngleDifferenceFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
 
 };

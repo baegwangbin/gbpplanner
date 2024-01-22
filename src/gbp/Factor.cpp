@@ -354,13 +354,16 @@ Eigen::MatrixXd ObstacleFactor::h_func_(const Eigen::VectorXd& X){
 
 
 ///////////////////////////////////////////////////
-template<class MeasType, class VarsType>
-FactorLie<MeasType, VarsType>::FactorLie(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-        float sigma, MeasType measurement) 
-        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), sigma_(sigma) {
+// Lie Factors
+///////////////////////////////////////////////////
+FactorLie::FactorLie(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+        float sigma, Eigen::VectorXd measurement, LieType measurement_lietype) 
+        : f_id_(f_id), r_id_(r_id), key_(r_id, f_id), variables_(variables), z_(measurement), sigma_(sigma),
+        measurement_lietype_(measurement_lietype) {
 
         // Initialise precision of the measurement function
-        this->meas_model_lambda_ = Eigen::MatrixXd::Identity(MeasType::DoF,MeasType::DoF) / pow(sigma_, 2.);
+        auto z_lt = lie_ndofs[measurement_lietype_];
+        this->meas_model_lambda_ = Eigen::MatrixXd::Identity(z_lt, z_lt) / pow(sigma_, 2.);
         this->adaptive_gauss_noise_var_ = pow(sigma_, 2.);
         
         // Initialise empty inbox and outbox
@@ -377,28 +380,16 @@ FactorLie<MeasType, VarsType>::FactorLie(int f_id, int r_id, std::vector<std::sh
 /*****************************************************************************************************/
 // Destructor
 /*****************************************************************************************************/
-template<class MeasType, class VarsType>
-FactorLie<MeasType, VarsType>::~FactorLie(){};
+FactorLie::~FactorLie(){};
 
-// template<class MeasType, class VarsType>
-// std::pair<Eigen::VectorXd, Eigen::MatrixXd> FactorLie<MeasType, VarsType>::computeResidualJacobian(){
-//     MeasType h;    
-//     Eigen::MatrixXd J;
-//     // Measurement function h(X) = X
-//     J = Eigen::Matrix3d::Identity(); 
-//     h = lin_point_[0];
-//     return {(z_ - h).coeffs(), J};
-// };
 
-template<class MeasType, class VarsType>
-bool FactorLie<MeasType, VarsType>::update_factor(){
+bool FactorLie::update_factor(){
 
     // *Depending on the problem*, we may need to skip computation of this factor.
     // eg. to avoid extra computation, factor may not be required if two connected variables are too far apart.
     // in which case send out a Zero Message.
     if (this->skip_factor()){
         for (auto var : variables_){
-            // this->outbox_[var->key_] = MessageSE2d();
             this->outbox_[var->key_] = var->zero_msg_;
         }           
         return false;
@@ -406,14 +397,12 @@ bool FactorLie<MeasType, VarsType>::update_factor(){
 
     // Messages from connected variables are aggregated.
     // The beliefs are used to create the linearisation point X_.
-    int idx = 0; int n_dofs;
+    int idx = 0;
     lin_point_.clear();
     for (int v=0; v<variables_.size(); v++){
-        n_dofs = variables_[v]->n_dofs_;
-        auto& [X_in, Lambda_in] = this->inbox_[variables_[v]->key_];
-        // auto [X_in, Lambda_in] = std::any_cast<MessageLie<decltype(variables_[v]->state_)>>(this->inbox_[variables_[v]->key_]);
+        auto& [X_in, Lambda_in, _] = this->inbox_[variables_[v]->key_];
         lin_point_.push_back(X_in);
-        idx += n_dofs;
+        idx += lie_ndofs[lietypes_[v]];
     }
     
     auto [residual, J] = computeResidualJacobian();
@@ -448,11 +437,11 @@ bool FactorLie<MeasType, VarsType>::update_factor(){
         for (int v_idx=0; v_idx<variables_.size(); v_idx++){
             int n_dofs = variables_[v_idx]->n_dofs_;
             if (variables_[v_idx]->key_ != var_out->key_) {
-                auto [Xin, Lin] = inbox_[variables_[v_idx]->key_];
-                // auto [Xin, Lin] = std::any_cast<MessageLie<decltype(variables_[v_idx]->state_)>>(this->inbox_[variables_[v_idx]->key_]);
-                auto tau = Xin - lin_point_[v_idx];
-                auto Lam = tau.rjac().transpose() * Lin * tau.rjac();
-                auto eta = Lam * tau.coeffs();     
+                auto lt = lietypes_[v_idx];
+                auto [Xin, Lin, _] = inbox_[variables_[v_idx]->key_];
+                auto tau = rightminus(Xin, lin_point_[v_idx], lt);
+                Eigen::MatrixXd Lam = rjac(tau, lt).transpose() * Lin * rjac(tau, lt);
+                Eigen::VectorXd eta = Lam * tau;     
                 factor_eta(seqN(idx_v, n_dofs)) += eta;
                 factor_lam(seqN(idx_v, n_dofs), seqN(idx_v, n_dofs)) += Lam;
             }
@@ -466,13 +455,12 @@ bool FactorLie<MeasType, VarsType>::update_factor(){
         // outgoing_msg.eta *= (1. - damping_);
         // outgoing_msg.lambda *= (1. - damping_);
 
-        using VarOutType = decltype(var_out->state_);
-        typename VarOutType::Tangent tau(Lam_marg.colPivHouseholderQr().solve(eta_marg));
-        VarOutType X_out = lin_point_[v_out_idx] + tau;
+        auto lt = lietypes_[v_out_idx];
+        Eigen::VectorXd tau = Lam_marg.colPivHouseholderQr().solve(eta_marg);
+        auto X_out = rightplus(lin_point_[v_out_idx], tau, lt);
 
-        Eigen::MatrixXd L_out = tau.rjacinv().transpose() * Lam_marg * tau.rjacinv();
-        // outbox_[var_out->key_] = std::any(MessageLie<VarOutType>(X_out, L_out));
-        outbox_[var_out->key_] = MessageLie<VarOutType>(X_out, L_out);
+        Eigen::MatrixXd L_out = rjacinv(tau, lt).transpose() * Lam_marg * rjacinv(tau, lt);
+        outbox_[var_out->key_] = MessageLie(X_out, L_out);
 
         marginalisation_idx += var_out->n_dofs_;
     }
@@ -483,8 +471,7 @@ bool FactorLie<MeasType, VarsType>::update_factor(){
 /*****************************************************************************************************/
 // Marginalise the factor Precision and Information and create the outgoing message to the variable
 /*****************************************************************************************************/
-template<class MeasType, class VarsType>
-std::pair<Eigen::VectorXd, Eigen::MatrixXd> FactorLie<MeasType, VarsType>::marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx){
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> FactorLie::marginalise_factor_dist(const Eigen::VectorXd &eta, const Eigen::MatrixXd &Lam, int var_idx, int marg_idx){
     // Marginalisation only needed if factor is connected to >1 variables
     int n_dofs = variables_[var_idx]->n_dofs_;
     if (eta.size() == n_dofs) return {eta, Lam};
@@ -514,65 +501,66 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> FactorLie<MeasType, VarsType>::margi
 };    
 
 /********************************************************************************************/
-/* PriorFactorSE2d factor: */
+/* PriorFactor factor: */
 /*****************************************************************************************************/
-PriorFactorSE2d::PriorFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SE2d measurement)
-    : FactorLie<manif::SE2d, manif::SE2d>{f_id, r_id, variables, sigma, measurement}{ 
+PriorFactor::PriorFactor(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType lietype)
+    : FactorLie{f_id, r_id, variables, sigma, measurement, lietype}{ 
         factor_type_ = DEFAULT_FACTOR;
+        lietypes_ = std::vector<LieType>{lietype};
+        n_dofs_ = lie_ndofs[lietype];
     };
 
-std::pair<Eigen::VectorXd, Eigen::MatrixXd> PriorFactorSE2d::computeResidualJacobian(){
-    manif::SE2d h;    
-    Eigen::MatrixXd J;
-    // Measurement function h(X) = X
-    J = Eigen::Matrix3d::Identity(); 
-    h = lin_point_[0];
-    return {(z_ - h).coeffs(), J};
-}   
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> PriorFactor::computeResidualJacobian(){
+    Eigen::VectorXd h;    
+    Eigen::MatrixXd J_h_X(n_dofs_, n_dofs_); 
+    h = rightminus(lin_point_[0], z_, lietypes_[0], J_h_X);    // h is in tangent space
+    Eigen::VectorXd res = -h; // [0] - h
+    return {res, J_h_X};
+};   
+/********************************************************************************************/
+/* Smoothness factor: */
+/*****************************************************************************************************/
+SmoothnessFactor::SmoothnessFactor(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType lietype)
+    : FactorLie{f_id, r_id, variables, sigma, measurement, lietype}{ 
+        factor_type_ = DEFAULT_FACTOR;
+        lietypes_ = std::vector<LieType>{lietype, lietype};
+        n_dofs_ = lie_ndofs[lietype];
+    };
+
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> SmoothnessFactor::computeResidualJacobian(){
+    Eigen::VectorXd h;    
+    Eigen::MatrixXd J(n_dofs_,n_dofs_*variables_.size());
+    auto& X1 = lin_point_[0], X2 = lin_point_[1];
+    Eigen::Matrix3d J_x1mx2_x1, J_x1mx2_x2, J_h_exp, J_exp_Jx1mx2;
+    
+    // h = Exp( x1 (-) x2 ) (-) z
+    LieType LT = lietypes_[0];
+    h = rightminus( Exp( rightminus( X1, X2, LT, J_x1mx2_x1, J_x1mx2_x2), LT, J_exp_Jx1mx2), z_, LT, J_h_exp);
+    J << (J_h_exp * J_exp_Jx1mx2 * J_x1mx2_x1).eval(), (J_h_exp * J_exp_Jx1mx2 * J_x1mx2_x2).eval();
+    Eigen::VectorXd res = -h; // [0] - h
+    return {res, J};
+};
 /********************************************************************************************/
 /* AngleDifferenceFactorSE2d factor: */
 /*****************************************************************************************************/
-AngleDifferenceFactorSE2d::AngleDifferenceFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SE2d measurement)
-    : FactorLie<manif::SE2d, manif::SE2d>{f_id, r_id, variables, sigma, measurement}{ 
+AngleDifferenceFactorSE2d::AngleDifferenceFactorSE2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement)
+    : FactorLie{f_id, r_id, variables, sigma, measurement, LieType::SE2d}{ 
         factor_type_ = DEFAULT_FACTOR;
+        lietypes_ = std::vector<LieType>{LieType::SE2d, LieType::SE2d};
     };
 
 std::pair<Eigen::VectorXd, Eigen::MatrixXd> AngleDifferenceFactorSE2d::computeResidualJacobian(){
-    manif::SE2d h;    
+    Eigen::VectorXd h;    
     Eigen::MatrixXd J;
     // Measurement function h(X1,X2) = theta1 - theta2
     auto& X1 = lin_point_[0], X2 = lin_point_[1];
     J = Eigen::MatrixXd::Zero(3,6);
     J << Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Identity();
     J(2,5) = -1;
-    double angular_diff = X1.angle() - X2.angle();
-    h = manif::SE2d(0., 0., angular_diff);
-    return {(z_ - h).coeffs(), J};
+    double angular_diff = manif::SE2d(X1).angle() - manif::SE2d(X2).angle();
+    h = manif::SE2d(0., 0., angular_diff).coeffs();
+    return {rightminus(z_, h, LieType::SE2d), J};
 }   
-/********************************************************************************************/
-/* AngleDifferenceFactorSE2d factor: */
-/*****************************************************************************************************/
-AngleDifferenceFactorSE2dtemp::AngleDifferenceFactorSE2dtemp(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie<manif::SE2d>>> variables,
-            float sigma, manif::SO2d measurement)
-    : FactorLie<manif::SO2d, manif::SE2d>{f_id, r_id, variables, sigma, measurement}{ 
-        factor_type_ = DEFAULT_FACTOR;
-    };
-
-std::pair<Eigen::VectorXd, Eigen::MatrixXd> AngleDifferenceFactorSE2dtemp::computeResidualJacobian(){
-    manif::SO2d h;    
-    Eigen::MatrixXd J;
-    // Measurement function h(X1,X2) = theta1 - theta2
-    auto& X1 = lin_point_[0], X2 = lin_point_[1];
-    J = Eigen::MatrixXd::Zero(1,6);
-    J << Eigen::Matrix3d::Identity(), Eigen::Matrix3d::Identity();
-    J(0,5) = -1;
-    double angular_diff = X1.angle() - X2.angle();
-    h = manif::SO2d(angular_diff);
-    return {(z_ - h).coeffs(), J};
-    // return {X1.coeffs(), J};
-}   
-
-template class FactorLie<manif::SE2d, manif::SE2d>;
-template class FactorLie<manif::SO2d, manif::SE2d>;
