@@ -20,11 +20,9 @@
 #include <gbp/lie_algebra.h>
 #include <any>
 #include <tuple>
-#include <variant>
-#include <typeinfo>
-#include <typeindex>
 #include <manif/manif.h>
 #include "manif/Bundle.h"
+#include "manif/SE2.h"
 Globals globals;
 Graphics* graphics;
 std::map<int, std::shared_ptr<FactorGraph>> factorgraphs{};
@@ -80,70 +78,124 @@ int main(int argc, char *argv[]){
 
     /////////////////////////////////////////////////////////////////
     // Create variables
-    int num_intermediate_vars = 10;
-    int v1_id = next_vid++;
+    int num_intermediate_vars = 50;
     int _rid = 1;
+    // int v1_id = next_vid++;
     Eigen::VectorXd siglist{{1., 1., 1.}};
-    // auto v1 = std::make_shared<VariableLie>(LieType::SO2d, v1_id, _rid, siglist);
-    auto v1 = std::make_shared<VariableLie>(LieType::SE2d, v1_id, _rid, siglist);
-    all_variables.push_back(v1);
 
-    // Add prior on pose
-    int v1_prior_id = next_fid++;
-    auto v1_prior_state = manif::SE2d(0.,0., 0*DEG2RAD).coeffs();
-    auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2d);
-    // auto v1_prior_state = manif::SO2d(350*DEG2RAD).coeffs();
-    // auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 0.001*1.*sigma_prior, v1_prior_state, LieType::SO2d);
-    all_factors.push_back(f1);
-    v1->add_factor(f1, true);
+    // // auto v1 = std::make_shared<VariableLie>(LieType::SO2d, v1_id, _rid, siglist);
+    // auto v1 = std::make_shared<VariableLie>(LieType::SE2d, v1_id, _rid, siglist);
+    // all_variables.push_back(v1);
 
-    for (int i=0; i<num_intermediate_vars; i++){
-        int vid = next_vid++;
-        auto var = std::make_shared<VariableLie>(LieType::SE2d, vid, _rid, siglist);
-        all_variables.push_back(var);
+    // // Add prior on pose
+    // int v1_prior_id = next_fid++;
+    // auto v1_prior_state = manif::SE2d(0.,0., 0*DEG2RAD).coeffs();
+    // auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2d);
+    // // auto v1_prior_state = manif::SO2d(350*DEG2RAD).coeffs();
+    // // auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v1}, 0.001*1.*sigma_prior, v1_prior_state, LieType::SO2d);
+    // all_factors.push_back(f1);
+    // v1->add_factor(f1, true);
+
+    // for (int i=0; i<num_intermediate_vars; i++){
+    //     int vid = next_vid++;
+    //     auto var = std::make_shared<VariableLie>(LieType::SE2d, vid, _rid, siglist);
+    //     all_variables.push_back(var);
+
+    //     // Add prior on pose
+    //     int v_p_id = next_fid++;
+    //     auto v_prior_state = manif::SE2d(0., 0., 0.*DEG2RAD).coeffs();
+    //     auto f2 = std::make_shared<PriorFactor>(v_p_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var}, 10.*sigma_prior, v_prior_state, LieType::SE2d);
+    //     all_factors.push_back(f2);
+    //     var->add_factor(f2, true);
+    // }
+
+    // int v2_id = next_vid++;
+    // // auto v2 = std::make_shared<VariableLie>(LieType::SO2d,v2_id, _rid, siglist);
+    // auto v2 = std::make_shared<VariableLie>(LieType::SE2d,v2_id, _rid, siglist);
+    // all_variables.push_back(v2);
+
+    // // Add prior on pose
+    // int v2_prior_id = next_fid++;
+    // auto v2_prior_state = manif::SE2d(4., 0., 180*DEG2RAD).coeffs();
+    // auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1e-10*sigma_prior, v2_prior_state, LieType::SE2d);
+    // // auto v2_prior_state = manif::SO2d(10*DEG2RAD).coeffs();
+    // // auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1.*sigma_prior, v2_prior_state, LieType::SO2d);
+    // all_factors.push_back(f2);
+    // v2->add_factor(f2, true);
+    // // /////////////////////////////////////////////////////////////////
+    
+    // // int f12_id = next_fid++;
+    // // std::vector<std::shared_ptr<VariableLie>> _variables {v1, v2};
+    // // auto measurement = manif::SE2d(0., 0., PI/4.).coeffs();
+    // // auto f12 = std::make_shared<AngleDifferenceFactorSE2d>(f12_id, 0, _variables, sigma_smoothness, measurement);
+    // // all_factors.push_back(f12);
+    // // for (auto v : _variables){
+    // //     v->add_factor(f12);
+    // // };
+    // for (int ii=0; ii<num_intermediate_vars+1; ii++){
+    //     int f12_id = next_fid++;
+    //     std::vector<std::shared_ptr<VariableLie>> variables {all_variables[ii], all_variables[ii+1]};
+    //     auto measurement = manif::SE2d(0.,0.,0.).coeffs();
+    //     float sig = 1e0;
+    //     auto f12 = std::make_shared<SmoothnessFactor>(f12_id, _rid, variables, sig, measurement, LieType::SE2d);
+    //     all_factors.push_back(f12);
+    //     for (auto v : variables){
+    //         v->add_factor(f12);
+    //     };
+    // }
+
+{
+        // start
+        int var_id = next_vid++;
+        auto var_se2_2 = std::make_shared<VariableLie>(LieType::SE2_2d, var_id, _rid, siglist);
+        all_variables.push_back(var_se2_2);
 
         // Add prior on pose
-        int v_p_id = next_fid++;
-        auto v_prior_state = manif::SE2d(0., 0., 0.*DEG2RAD).coeffs();
-        auto f2 = std::make_shared<PriorFactor>(v_p_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var}, 10.*sigma_prior, v_prior_state, LieType::SE2d);
-        all_factors.push_back(f2);
-        var->add_factor(f2, true);
+        int v1_prior_id = next_fid++;
+        auto v1_prior_state = SE2_2d(manif::SE2d(-3.,-3., 0.*DEG2RAD), manif::SE2d(1., 0., 0*DEG2RAD)).coeffs();
+        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2_2d);
+        all_factors.push_back(f1);
+        var_se2_2->add_factor(f1, true);
+}
+    // bundle variable
+    for (int j=0; j<num_intermediate_vars; j++){
+        int var_id = next_vid++;
+        auto var_se2_2 = std::make_shared<VariableLie>(LieType::SE2_2d, var_id, _rid, siglist);
+        all_variables.push_back(var_se2_2);
+
+        // Add prior on pose
+        int v1_prior_id = next_fid++;
+        auto v1_prior_state = SE2_2d(manif::SE2d(0., 0., 0.), manif::SE2d(0., 0., 0.)).coeffs();
+        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 100.*sigma_prior, v1_prior_state, LieType::SE2_2d);
+        all_factors.push_back(f1);
+        var_se2_2->add_factor(f1, true);
     }
+{
+        // end
+        int var_id = next_vid++;
+        auto var_se2_2 = std::make_shared<VariableLie>(LieType::SE2_2d, var_id, _rid, siglist);
+        all_variables.push_back(var_se2_2);
 
-    int v2_id = next_vid++;
-    // auto v2 = std::make_shared<VariableLie>(LieType::SO2d,v2_id, _rid, siglist);
-    auto v2 = std::make_shared<VariableLie>(LieType::SE2d,v2_id, _rid, siglist);
-    all_variables.push_back(v2);
-
-    // Add prior on pose
-    int v2_prior_id = next_fid++;
-    auto v2_prior_state = manif::SE2d(4., 0., 180*DEG2RAD).coeffs();
-    auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1e-10*sigma_prior, v2_prior_state, LieType::SE2d);
-    // auto v2_prior_state = manif::SO2d(10*DEG2RAD).coeffs();
-    // auto f2 = std::make_shared<PriorFactor>(v2_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{v2}, 1.*sigma_prior, v2_prior_state, LieType::SO2d);
-    all_factors.push_back(f2);
-    v2->add_factor(f2, true);
-    // /////////////////////////////////////////////////////////////////
-    
-    // int f12_id = next_fid++;
-    // std::vector<std::shared_ptr<VariableLie>> _variables {v1, v2};
-    // auto measurement = manif::SE2d(0., 0., PI/4.).coeffs();
-    // auto f12 = std::make_shared<AngleDifferenceFactorSE2d>(f12_id, 0, _variables, sigma_smoothness, measurement);
-    // all_factors.push_back(f12);
-    // for (auto v : _variables){
-    //     v->add_factor(f12);
-    // };
+        // Add prior on pose
+        int v1_prior_id = next_fid++;
+        auto v1_prior_state = SE2_2d(manif::SE2d(0.,3., 180.*DEG2RAD), manif::SE2d(0., 1., 0.*DEG2RAD)).coeffs();
+        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2_2d);
+        all_factors.push_back(f1);
+        var_se2_2->add_factor(f1, true);
+}
+// dynamics factors
     for (int ii=0; ii<num_intermediate_vars+1; ii++){
         int f12_id = next_fid++;
         std::vector<std::shared_ptr<VariableLie>> variables {all_variables[ii], all_variables[ii+1]};
-        auto measurement = manif::SE2d(0.,0.,0.).coeffs();
-        float sig = 1e0;
-        auto f12 = std::make_shared<SmoothnessFactor>(f12_id, _rid, variables, sig, measurement, LieType::SE2d);
+        auto measurement = SE2_2d(manif::SE2d(0., 0., 0.), manif::SE2d(0., 0., 0.)).coeffs();
+        float sig = 1e2;
+        auto f12 = std::make_shared<DynamicsFactorSE2_2d>(f12_id, _rid, variables, sig, measurement, globals.TIMESTEP);
         all_factors.push_back(f12);
         for (auto v : variables){
             v->add_factor(f12);
         };
     }
+
 
     while (globals.RUN){
         for (int iter=0; iter<10; iter++){
@@ -166,9 +218,9 @@ int main(int argc, char *argv[]){
                 var->update_belief();
             };   
             if (iter<9) continue;
-            print("Iteration:", iter);         
-            print("pos 1:", iter, manif::SE2d(v1->state_).translation().eval().transpose(), manif::SE2d(v1->state_).angle() * RAD2DEG);
-            print("pos 2:", iter, manif::SE2d(v2->state_).translation().eval().transpose(), manif::SE2d(v2->state_).angle() * RAD2DEG);
+            // print("Iteration:", iter);         
+            // print("pos 1:", iter, manif::SE2d(v1->state_).translation().eval().transpose(), manif::SE2d(v1->state_).angle() * RAD2DEG);
+            // print("pos 2:", iter, manif::SE2d(v2->state_).translation().eval().transpose(), manif::SE2d(v2->state_).angle() * RAD2DEG);
             // print("pos 1:", iter, manif::SO2d(v1->state_).angle() * RAD2DEG);
             // print("pos 2:", iter, manif::SO2d(v2->state_).angle() * RAD2DEG);
         }
@@ -178,12 +230,27 @@ int main(int argc, char *argv[]){
             ClearBackground(RAYWHITE);
             BeginMode3D(graphics->camera3d);
                 // Draw Ground
+                Eigen::Vector2d pos; float angle, len = 0.2f;
+                Eigen::Vector2d pos_dot; float angle_dot;
                 for (auto var : all_variables){
-                    auto pos = manif::SE2d(var->state_).translation();
+                    if (var->lietype_==LieType::SE2_2d){
+                        // pos = manif::SE2d(var->state_({0,1,2,3})).translation();
+                        auto coeffs = Log(var->state_, LieType::SE2_2d);
+                        pos = coeffs({0,1});
+                        angle = coeffs(2);
+                        pos_dot = coeffs({3,4});
+                        angle_dot = coeffs(5);
+                        DrawLine3D(Vector3{(float)pos(0), (float)0.5, (float)pos(1)},
+                                Vector3{(float)(pos(0) + pos_dot(0)), (float)0.5, (float)(pos(1) + pos_dot(1))}, BLUE);
+                        
+                        
+                    } else {
+                        pos = manif::SE2d(var->state_).translation();
+                        angle = manif::SE2d(var->state_).angle();
+                    }
+
                     DrawModel(graphics->landmarkModel_,
                             Vector3{(float)pos(0), (float)0.5, (float)pos(1)}, 0.1f, RED);
-                    float angle = manif::SE2d(var->state_).angle();
-                    float len = 0.2f;
                     DrawLine3D(Vector3{(float)pos(0), (float)0.5, (float)pos(1)},
                             Vector3{(float)pos(0) + 1.f*len*cos(angle), (float)0.5, (float)pos(1) + len*sin(angle)}, BLACK);
                 }

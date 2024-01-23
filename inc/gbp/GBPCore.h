@@ -13,7 +13,7 @@
 
 #include <Globals.h>
 #include <manif/manif.h>
-#include <any>
+#include <manif/Bundle.h>
 #include <tl/optional.hpp>
 extern Globals globals;
 /*************************************************************************************************************/
@@ -122,59 +122,38 @@ class Message {
 using Mailbox = std::map<Key, Message>;
 
 
-enum class LieType {SE2d, SO3d, SO2d};
+enum class LieType {SE2d, SO3d, SO2d, SE2_2d};
+using SE2_2d = manif::Bundle<double, manif::SE2, manif::SE2>;
 static std::map<LieType, int> lie_ndofs{{LieType::SE2d, manif::SE2d::DoF},
                                         {LieType::SO3d, manif::SO3d::DoF},
-                                        {LieType::SO2d, manif::SO2d::DoF}};
+                                        {LieType::SO2d, manif::SO2d::DoF},
+                                        {LieType::SE2_2d, SE2_2d::DoF}};
 
 class MessageLie {
     public:
     Eigen::VectorXd X;
     Eigen::MatrixXd lambda;
-    int n = 3;
+    Eigen::VectorXd eta;
 
     // A Message can be initialised with zeros, of the dimension given in the input.
-    MessageLie(){
-        X = Eigen::VectorXd::Zero(n);
-        lambda = Eigen::MatrixXd::Zero(n, n);
-    };
+    MessageLie(){};
+
     MessageLie(int n_dofs){
         X = Eigen::VectorXd::Zero(n_dofs);
         lambda = Eigen::MatrixXd::Zero(n_dofs, n_dofs);
-        n = n_dofs;
+        eta = Eigen::VectorXd::Zero(n_dofs);
     };
     // A message can also be initialised explicitly using a given eta, lambda and optionally mu.
     MessageLie(Eigen::VectorXd X_in, Eigen::MatrixXd lambda_in){
         X = X_in;
         lambda = lambda_in;
-        n = X_in.size();
+        // eta = lambda_in.inverse() * X_in;
     };
     
 };
 using MailboxLie = std::map<Key, MessageLie>;
 
 
-
-// ******************************** //
-// Code for iterating through tuple //
-template <typename T>
-inline constexpr size_t tuple_size_v = std::tuple_size<T>::value;
-template <typename T, typename F, std::size_t... I>
-constexpr void visit_impl(T& tup, const size_t idx, F fun, std::index_sequence<I...>)
-{
-    assert(idx < tuple_size_v<T>);
-    ((I == idx ? fun(std::get<I>(tup)) : void()), ...);
-}
-template <typename F, typename... Ts, typename Indices = std::make_index_sequence<sizeof...(Ts)>>
-constexpr void visit_at(std::tuple<Ts...>& tup, const size_t idx, F fun)
-{
-    visit_impl(tup, idx, fun, Indices {});
-}
-template <typename F, typename... Ts, typename Indices = std::make_index_sequence<sizeof...(Ts)>>
-constexpr void visit_at(const std::tuple<Ts...>& tup, const size_t idx, F fun)
-{
-    visit_impl(tup, idx, fun, Indices {});
-}
 
 inline Eigen::VectorXd rightplus(const Eigen::VectorXd& a, const Eigen::VectorXd& b, LieType lietype,
                                     tl::optional<Eigen::Ref<Eigen::MatrixXd>> J_fn_a = {},
@@ -188,6 +167,9 @@ inline Eigen::VectorXd rightplus(const Eigen::VectorXd& a, const Eigen::VectorXd
         break;
     case LieType::SO2d:
         return (manif::SO2d(a).rplus(manif::SO2d::Tangent(b), J_fn_a, J_fn_b)).coeffs();
+        break;
+    case LieType::SE2_2d:
+        return (SE2_2d(a).rplus(SE2_2d::Tangent(b), J_fn_a, J_fn_b)).coeffs();
         break;
     default:
         return a + b;
@@ -206,6 +188,9 @@ inline Eigen::VectorXd rightminus(const Eigen::VectorXd& a, const Eigen::VectorX
     case LieType::SO2d:
         return (manif::SO2d(a).rminus(manif::SO2d(b), J_fn_a, J_fn_b)).coeffs();
         break;
+    case LieType::SE2_2d:
+        return (SE2_2d(a).rminus(SE2_2d(b), J_fn_a, J_fn_b)).coeffs();
+        break;
     default:
         return a - b;
     }
@@ -221,6 +206,9 @@ inline Eigen::MatrixXd rjac(Eigen::VectorXd tau, LieType lietype){
         break;
     case LieType::SO2d:
         return manif::SO2d::Tangent(tau).rjac();
+        break;
+    case LieType::SE2_2d:
+        return SE2_2d::Tangent(tau).rjac();
         break;
     default:
         return Eigen::MatrixXd::Identity(tau.size(), tau.size());
@@ -238,6 +226,9 @@ inline Eigen::MatrixXd rjacinv(Eigen::VectorXd tau, LieType lietype){
     case LieType::SO2d:
         return manif::SO2d::Tangent(tau).rjacinv();
         break;
+    case LieType::SE2_2d:
+        return SE2_2d::Tangent(tau).rjacinv();
+        break;
     default:
         return Eigen::MatrixXd::Identity(tau.size(), tau.size());
     }    
@@ -252,6 +243,9 @@ inline Eigen::VectorXd lie_identity_coeffs(LieType lietype){
         break;
     case LieType::SO2d:
         return manif::SO2d().Identity().coeffs();
+        break;
+    case LieType::SE2_2d:
+        return SE2_2d().Identity().coeffs();
         break;
     default:
         return Eigen::VectorXd::Zero(3);
@@ -269,6 +263,9 @@ inline Eigen::VectorXd Exp(Eigen::VectorXd tangent_space_var_coeffs, LieType lie
     case LieType::SO2d:
         return manif::SO2d::Tangent(tangent_space_var_coeffs).exp(J_Exp_tau).coeffs();
         break;
+    case LieType::SE2_2d:
+        return SE2_2d::Tangent(tangent_space_var_coeffs).exp(J_Exp_tau).coeffs();
+        break;
     default:
         return Eigen::VectorXd::Zero(3);
     }    
@@ -284,6 +281,9 @@ inline Eigen::VectorXd Log(Eigen::VectorXd manifold_coeffs, LieType lietype,
         break;
     case LieType::SO2d:
         return manif::SO2d(manifold_coeffs).log(J_Log_X).coeffs();
+        break;
+    case LieType::SE2_2d:
+        return SE2_2d(manifold_coeffs).log(J_Log_X).coeffs();
         break;
     default:
         return Eigen::VectorXd::Zero(3);

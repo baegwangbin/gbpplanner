@@ -237,3 +237,19 @@ class AngleDifferenceFactorSE2d: public FactorLie {
     std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
 
 };
+
+
+/********************************************************************************************/
+/* Dynamics factor: constant-velocity model */
+/*****************************************************************************************************/
+class DynamicsFactorSE2_2d: public FactorLie {
+    public:
+    float dt_;
+    int n_dofs_;
+
+    DynamicsFactorSE2_2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+        float sigma, const Eigen::VectorXd& measurement, float dt);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
+
+};
