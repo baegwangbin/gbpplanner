@@ -59,7 +59,8 @@ Graphics::Graphics(Image obstacleImg) : obstacleImg_(ImageCopy(obstacleImg)){
     // Create lights
     Light lights[MAX_LIGHTS] = { 0 };
     Vector3 target = camera3d.target;
-    Vector3 position = Vector3{target.x-10,target.y-20,target.z-10};
+    // Vector3 position = Vector3{target.x-10,target.y-20,target.z-10};
+    Vector3 position = Vector3{target.x,target.y+1,target.z};
     lights[0] = CreateLight(LIGHT_POINT, position, target, LIGHTGRAY, lightShader_);                            
 }
 

@@ -78,7 +78,7 @@ int main(int argc, char *argv[]){
 
     /////////////////////////////////////////////////////////////////
     // Create variables
-    int num_intermediate_vars = 50;
+    int num_intermediate_vars = 10;
     int _rid = 1;
     // int v1_id = next_vid++;
     Eigen::VectorXd siglist{{1., 1., 1.}};
@@ -152,8 +152,8 @@ int main(int argc, char *argv[]){
 
         // Add prior on pose
         int v1_prior_id = next_fid++;
-        auto v1_prior_state = SE2_2d(manif::SE2d(-3.,-3., 0.*DEG2RAD), manif::SE2d(1., 0., 0*DEG2RAD)).coeffs();
-        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2_2d);
+        auto v1_prior_state = SE2_2d(manif::SE2d(0.,0., 0.*DEG2RAD), manif::SE2d(-1., 1., 0*DEG2RAD)).coeffs();
+        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-8*sigma_prior, v1_prior_state, LieType::SE2_2d);
         all_factors.push_back(f1);
         var_se2_2->add_factor(f1, true);
 }
@@ -178,25 +178,34 @@ int main(int argc, char *argv[]){
 
         // Add prior on pose
         int v1_prior_id = next_fid++;
-        auto v1_prior_state = SE2_2d(manif::SE2d(0.,3., 180.*DEG2RAD), manif::SE2d(0., 1., 0.*DEG2RAD)).coeffs();
-        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-10*sigma_prior, v1_prior_state, LieType::SE2_2d);
+        auto v1_prior_state = SE2_2d(manif::SE2d(-2,2, 0.*DEG2RAD), manif::SE2d(0., 0., 0.*DEG2RAD)).coeffs();
+        auto f1 = std::make_shared<PriorFactor>(v1_prior_id, _rid, std::vector<std::shared_ptr<VariableLie>>{var_se2_2}, 1e-8*sigma_prior, v1_prior_state, LieType::SE2_2d);
         all_factors.push_back(f1);
         var_se2_2->add_factor(f1, true);
 }
 // dynamics factors
     for (int ii=0; ii<num_intermediate_vars+1; ii++){
+        // int f12_id = next_fid++;
+        // std::vector<std::shared_ptr<VariableLie>> variables {all_variables[ii], all_variables[ii+1]};
+        // auto measurement = SE2_2d(manif::SE2d(0., 0., 0.), manif::SE2d(0., 0., 0.)).coeffs();
+        // float sig = 1e4;
+        // auto f12 = std::make_shared<DynamicsFactorSE2_2d>(f12_id, _rid, variables, sig, measurement, globals.TIMESTEP);
+        // all_factors.push_back(f12);
+        // for (auto v : variables){
+        //     v->add_factor(f12);
+        // };
         int f12_id = next_fid++;
         std::vector<std::shared_ptr<VariableLie>> variables {all_variables[ii], all_variables[ii+1]};
         auto measurement = SE2_2d(manif::SE2d(0., 0., 0.), manif::SE2d(0., 0., 0.)).coeffs();
-        float sig = 1e2;
-        auto f12 = std::make_shared<DynamicsFactorSE2_2d>(f12_id, _rid, variables, sig, measurement, globals.TIMESTEP);
+        float sig = 1e0;
+        auto f12 = std::make_shared<DynamicsFactorSE2_2d_test>(f12_id, _rid, variables, sig, measurement, globals.TIMESTEP);
         all_factors.push_back(f12);
         for (auto v : variables){
             v->add_factor(f12);
         };
     }
 
-
+    int v_cnt = 0;
     while (globals.RUN){
         for (int iter=0; iter<10; iter++){
             for (int f_idx=0; f_idx<all_factors.size(); f_idx++){
@@ -232,7 +241,12 @@ int main(int argc, char *argv[]){
                 // Draw Ground
                 Eigen::Vector2d pos; float angle, len = 0.2f;
                 Eigen::Vector2d pos_dot; float angle_dot;
-                for (auto var : all_variables){
+                for (int vi=0; vi<all_variables.size(); vi++){
+                    Color col = (v_cnt == vi) ? RED : LIGHTGRAY;
+                    float sz = (v_cnt == vi) ? 0.1f : 0.1f;
+
+                    auto var = all_variables[vi];
+
                     if (var->lietype_==LieType::SE2_2d){
                         // pos = manif::SE2d(var->state_({0,1,2,3})).translation();
                         auto coeffs = Log(var->state_, LieType::SE2_2d);
@@ -241,7 +255,7 @@ int main(int argc, char *argv[]){
                         pos_dot = coeffs({3,4});
                         angle_dot = coeffs(5);
                         DrawLine3D(Vector3{(float)pos(0), (float)0.5, (float)pos(1)},
-                                Vector3{(float)(pos(0) + pos_dot(0)), (float)0.5, (float)(pos(1) + pos_dot(1))}, BLUE);
+                                Vector3{(float)(pos(0) + globals.TIMESTEP*pos_dot(0)), (float)0.5, (float)(pos(1) + globals.TIMESTEP*pos_dot(1))}, col);
                         
                         
                     } else {
@@ -250,13 +264,16 @@ int main(int argc, char *argv[]){
                     }
 
                     DrawModel(graphics->landmarkModel_,
-                            Vector3{(float)pos(0), (float)0.5, (float)pos(1)}, 0.1f, RED);
+                            Vector3{(float)pos(0), (float)0.5, (float)pos(1)}, sz, col);
                     DrawLine3D(Vector3{(float)pos(0), (float)0.5, (float)pos(1)},
                             Vector3{(float)pos(0) + 1.f*len*cos(angle), (float)0.5, (float)pos(1) + len*sin(angle)}, BLACK);
                 }
                 // Draw Robots
             EndMode3D();
         EndDrawing();  
+        WaitTime(0.05);
+        v_cnt++;
+        if (v_cnt > num_intermediate_vars + 2) v_cnt = 0;
 
     }
 

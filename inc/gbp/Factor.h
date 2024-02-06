@@ -213,6 +213,19 @@ class PriorFactor: public FactorLie {
 
 };
 /********************************************************************************************/
+/* Prior SE2d factor */
+/*****************************************************************************************************/
+class PriorFactorSE2_2d: public FactorLie {
+    public:
+    int n_dofs_;
+
+    PriorFactorSE2_2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+            float sigma, Eigen::VectorXd measurement, LieType lietype);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
+
+};
+/********************************************************************************************/
 /* Smoothness factor */
 /*****************************************************************************************************/
 class SmoothnessFactor: public FactorLie {
@@ -248,6 +261,20 @@ class DynamicsFactorSE2_2d: public FactorLie {
     int n_dofs_;
 
     DynamicsFactorSE2_2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+        float sigma, const Eigen::VectorXd& measurement, float dt);
+
+    std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();
+
+};
+/********************************************************************************************/
+/* Dynamics factor: constant-velocity model */
+/*****************************************************************************************************/
+class DynamicsFactorSE2_2d_test: public FactorLie {
+    public:
+    float dt_;
+    int n_dofs_;
+
+    DynamicsFactorSE2_2d_test(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
         float sigma, const Eigen::VectorXd& measurement, float dt);
 
     std::pair<Eigen::VectorXd, Eigen::MatrixXd> computeResidualJacobian();

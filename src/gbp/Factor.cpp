@@ -518,6 +518,26 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> PriorFactor::computeResidualJacobian
     Eigen::VectorXd res = -h; // [0] - h
     return {res, J_h_X};
 };   
+// /********************************************************************************************/
+// /* PriorFactor factor: */
+// /*****************************************************************************************************/
+// PriorFactorSE2_2d::PriorFactorSE2_2d(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+//             float sigma, Eigen::VectorXd measurement, LieType lietype)
+//     : FactorLie{f_id, r_id, variables, sigma, measurement, lietype}{ 
+//         factor_type_ = DEFAULT_FACTOR;
+//         lietypes_ = std::vector<LieType>{lietype};
+//         n_dofs_ = lie_ndofs[lietype];
+//     };
+
+// std::pair<Eigen::VectorXd, Eigen::MatrixXd> PriorFactorSE2_2d::computeResidualJacobian(){
+//     Eigen::VectorXd h(n_dofs_);    
+//     Eigen::MatrixXd J(n_dofs_, n_dofs_); 
+//     Eigen::Matrix3d J_h_X;
+//     h({0,1,2}) = manif::SE2d(lin_point_[0]).rminus(manif::SE2d(z_({0,1,2,3})), J_h_X).coeffs();    // h is in tangent space
+//     h({3,4,5}) = manif::SE2d(lin_point_[0]).log().coeffs();
+//     Eigen::VectorXd res = -h; // [0] - h
+//     return {res, J_h_X};
+// };   
 /********************************************************************************************/
 /* Smoothness factor: */
 /*****************************************************************************************************/
@@ -601,39 +621,108 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> DynamicsFactorSE2_2d::computeResidua
     Eigen::VectorXd X1 = lin_point_[0](Eigen::seqN(0, n/2)), X2 = lin_point_[1](Eigen::seqN(0, n/2));
     Eigen::VectorXd X1_dot = lin_point_[0](Eigen::seqN(n/2, n/2)), X2_dot = lin_point_[1](Eigen::seqN(n/2, n/2));
 
-    Eigen::Matrix3d J_logx1dot_x1dot;
-    Eigen::Matrix3d J_res_h0, J_exp_x1comb, J_x1comb_x1, J_h0_x2, J_x1comb_logx1dot, J_h0_exp;
-    Eigen::Matrix3d J_exp_x1dot, J_exp_x2dot, J_res_h1, J_h1_exp;
+    // Eigen::Matrix3d J_logx1dot_x1dot;
+    // Eigen::Matrix3d J_res_h0, J_exp_x1comb, J_x1comb_x1, J_h0_x2, J_x1comb_logx1dot, J_h0_exp;
+    // Eigen::Matrix3d J_exp_x1dot, J_exp_x2dot, J_res_h1, J_h1_exp;
     // res = h(x1comb(x1, Log(x1dot)) - x2) - z
-    h(Eigen::seqN(0, 3)) = rightminus(  
-                Exp(                                                         // res
-                    rightminus(
-                        rightplus(X1, 
-                            dt_ * Log(X1_dot, 
-                                LieType::SE2d, J_logx1dot_x1dot), 
-                            LieType::SE2d, J_x1comb_x1, J_x1comb_logx1dot),
-                    X2, LieType::SE2d, J_exp_x1comb, J_h0_x2), 
-                LieType::SE2d, J_h0_exp),
-            z_({0,1,2,3}), LieType::SE2d, J_res_h0);
+    // h(Eigen::seqN(0, 3)) = rightminus(  
+    //             Exp(                                                         // res
+    //                 rightminus(
+    //                     rightplus(X1, 
+    //                         dt_ * Log(X1_dot, 
+    //                             LieType::SE2d, J_logx1dot_x1dot), 
+    //                         LieType::SE2d, J_x1comb_x1, J_x1comb_logx1dot),
+    //                 X2, LieType::SE2d, J_exp_x1comb, J_h0_x2), 
+    //             LieType::SE2d, J_h0_exp),
+    //         z_({0,1,2,3}), LieType::SE2d, J_res_h0);
 
-    h(Eigen::seqN(3, 3)) = rightminus(
-                Exp(
-                    rightminus(
-                        X1_dot, X2_dot, LieType::SE2d,
-                        J_exp_x1dot, J_exp_x2dot
-                    ), LieType::SE2d, J_h1_exp),
-                z_({4,5,6,7}), LieType::SE2d, J_res_h1);
-
-    J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(0, 3)) = (J_res_h0 * J_h0_exp * J_exp_x1comb * J_x1comb_x1).eval();
-    J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(3, 3)) = (J_res_h0 * J_h0_exp * J_exp_x1comb * J_x1comb_logx1dot * dt_ * J_logx1dot_x1dot).eval();
-    J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(6, 3)) = (J_res_h0 * J_h0_x2).eval();
-    J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(9, 3)) = Eigen::Matrix3d::Zero();
+    // J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(0, 3)) = (J_res_h0 * J_h0_exp * J_exp_x1comb * J_x1comb_x1).eval();
+    // J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(3, 3)) = (J_res_h0 * J_h0_exp * J_exp_x1comb * J_x1comb_logx1dot * dt_ * J_logx1dot_x1dot).eval();
+    // J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(6, 3)) = (J_res_h0 * J_h0_x2).eval();
+    // J(Eigen::seqN(0, n_dofs_/2), Eigen::seqN(9, 3)) = Eigen::Matrix3d::Zero();
     
-    J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(0, 3)) = Eigen::Matrix3d::Zero();
-    J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(3, 3)) = J_res_h1 * J_h1_exp * J_exp_x1dot;
-    J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(6, 3)) = Eigen::Matrix3d::Zero();
-    J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(9, 3)) = J_res_h1 * J_h1_exp * J_exp_x2dot;
+    // J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(0, 3)) = Eigen::Matrix3d::Zero();
+    // J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(3, 3)) = J_res_h1 * J_h1_exp * J_exp_x1dot;
+    // J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(6, 3)) = Eigen::Matrix3d::Zero();
+    // J(Eigen::seqN(3, n_dofs_/2), Eigen::seqN(9, 3)) = J_res_h1 * J_h1_exp * J_exp_x2dot;
 
+    Eigen::Matrix3d J_logx1dot_x1dot, J_x1comb_x1, J_x1comb_logx1dot, J_h0_x1comb, J_h0_x2, J_exp_h0, J_res_exph0;
+    h(Eigen::seqN(0, 3)) = (
+        (manif::SE2d(X1).rplus(
+            dt_ * manif::SE2d(X1_dot).log(J_logx1dot_x1dot),
+            J_x1comb_x1, J_x1comb_logx1dot)
+        ).rminus(manif::SE2d(X2), J_h0_x1comb, J_h0_x2)).exp(J_exp_h0).rminus(manif::SE2d(z_({0,1,2,3})), J_res_exph0, {}).coeffs();
+    J(Eigen::seqN(0, 3), Eigen::seqN(0, 3)) = (J_res_exph0 * J_exp_h0 * J_h0_x1comb * J_x1comb_x1).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(3, 3)) = dt_ * (J_res_exph0 * J_exp_h0 * J_h0_x1comb * J_x1comb_logx1dot * J_logx1dot_x1dot).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(6, 3)) = (J_res_exph0 * J_exp_h0 * J_h0_x2).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(9, 3)) = Eigen::Matrix3d::Zero();
+
+    Eigen::Matrix3d J_h1_x1dot, J_h1_x2dot, J_exp_h1, J_res_exph1;
+    h(Eigen::seqN(3, 3)) = manif::SE2d(X1_dot).rminus(manif::SE2d(X2_dot), J_h1_x1dot, J_h1_x2dot).exp(J_exp_h1).rminus(manif::SE2d(z_({4,5,6,7})), J_res_exph1).coeffs();
+    J(Eigen::seqN(3, 3), Eigen::seqN(0, 3)) = Eigen::Matrix3d::Zero();
+    J(Eigen::seqN(3, 3), Eigen::seqN(3, 3)) = J_res_exph1 * J_exp_h1 * J_h1_x1dot;
+    J(Eigen::seqN(3, 3), Eigen::seqN(6, 3)) = Eigen::Matrix3d::Zero();
+    J(Eigen::seqN(3, 3), Eigen::seqN(9, 3)) = J_res_exph1 * J_exp_h1 * J_h1_x2dot;
+    
+    Eigen::VectorXd res = -h; // [0] - h
+    return {res, J};            
+}   
+
+
+DynamicsFactorSE2_2d_test::DynamicsFactorSE2_2d_test(int f_id, int r_id, std::vector<std::shared_ptr<VariableLie>> variables,
+    float sigma, const Eigen::VectorXd& measurement, float dt)
+    : dt_(dt), FactorLie{f_id, r_id, variables, sigma, measurement, LieType::SE2d}{ 
+        factor_type_ = DEFAULT_FACTOR;
+        lietypes_ = std::vector<LieType>{LieType::SE2_2d, LieType::SE2_2d};
+
+        n_dofs_ = lie_ndofs[LieType::SE2_2d];
+        Eigen::MatrixXd I = Eigen::MatrixXd::Identity(n_dofs_/2,n_dofs_/2);
+        Eigen::MatrixXd O = Eigen::MatrixXd::Zero(n_dofs_/2,n_dofs_/2);
+        Eigen::MatrixXd Qc_inv = pow(sigma, -2.) * I;
+
+        Eigen::MatrixXd Qi_inv(n_dofs_, n_dofs_);
+        Qi_inv << 12.*pow(dt, -3.) * Qc_inv,   -6.*pow(dt, -2.) * Qc_inv,
+                  -6.*pow(dt, -2.) * Qc_inv,   4./dt * Qc_inv;   
+
+        this->meas_model_lambda_ = Qi_inv;        
+
+    };
+
+std::pair<Eigen::VectorXd, Eigen::MatrixXd> DynamicsFactorSE2_2d_test::computeResidualJacobian(){
+    Eigen::VectorXd h(n_dofs_);    
+    Eigen::MatrixXd J(n_dofs_, 2*n_dofs_);
+    // Measurement function h(X1,X2) = X1 + dt*X1_dot - X2
+    int n = lin_point_[0].size();
+    Eigen::VectorXd X1 = lin_point_[0](Eigen::seqN(0, n/2)), X2 = lin_point_[1](Eigen::seqN(0, n/2));
+    Eigen::VectorXd X1_dot = lin_point_[0](Eigen::seqN(n/2, n/2)), X2_dot = lin_point_[1](Eigen::seqN(n/2, n/2));
+
+    Eigen::Matrix3d J_x2mx1px1dot_X2, J_x2mx1px1dot_x1px1dot;
+    Eigen::Matrix3d J_logx1dot_x1dot, J_x1px1dot_x1, J_x1px1dot_logx1dot;
+    Eigen::Matrix3d J_x2dotmx1dot_x2dot, J_x2dotmx1dot_x1dot;
+    h(Eigen::seqN(0, 3)) = (manif::SE2d(X2).rminus(
+                manif::SE2d(X1).rplus(dt_ * manif::SE2d(X1_dot).log(J_logx1dot_x1dot), J_x1px1dot_x1, J_x1px1dot_logx1dot),
+            J_x2mx1px1dot_X2, J_x2mx1px1dot_x1px1dot)).coeffs();
+    h(Eigen::seqN(3,3)) = manif::SE2d(X2_dot).rminus(manif::SE2d(X1_dot), J_x2dotmx1dot_x2dot, J_x2dotmx1dot_x1dot).coeffs();
+
+    J(Eigen::seqN(0, 3), Eigen::seqN(0, 3)) = (J_x2mx1px1dot_x1px1dot * J_x1px1dot_x1).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(3, 3)) = (J_x2mx1px1dot_x1px1dot * J_x1px1dot_logx1dot * J_logx1dot_x1dot).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(6, 3)) = (J_x2mx1px1dot_X2).eval();
+    J(Eigen::seqN(0, 3), Eigen::seqN(9, 3)) = Eigen::Matrix3d::Zero();
+
+    J(Eigen::seqN(3, 3), Eigen::seqN(0, 3)) = Eigen::Matrix3d::Zero();
+    J(Eigen::seqN(3, 3), Eigen::seqN(3, 3)) = (J_x2dotmx1dot_x1dot).eval();
+    J(Eigen::seqN(3, 3), Eigen::seqN(6, 3)) = Eigen::Matrix3d::Zero();
+    J(Eigen::seqN(3, 3), Eigen::seqN(9, 3)) = (J_x2dotmx1dot_x2dot).eval();
+    // J(Eigen::seqN(0, 3), Eigen::seqN(0, 3)) = (J_x1px1dot_x1 * J_x2mx1px1dot_x1px1dot).eval();
+    // J(Eigen::seqN(0, 3), Eigen::seqN(3, 3)) = (J_logx1dot_x1dot * J_x1px1dot_logx1dot * J_x2mx1px1dot_x1px1dot).eval();
+    // J(Eigen::seqN(0, 3), Eigen::seqN(6, 3)) = (J_x2mx1px1dot_X2).eval();
+    // J(Eigen::seqN(0, 3), Eigen::seqN(9, 3)) = Eigen::Matrix3d::Zero();
+
+    // J(Eigen::seqN(3, 3), Eigen::seqN(0, 3)) = Eigen::Matrix3d::Zero();
+    // J(Eigen::seqN(3, 3), Eigen::seqN(3, 3)) = (J_x2dotmx1dot_x1dot).eval();
+    // J(Eigen::seqN(3, 3), Eigen::seqN(6, 3)) = Eigen::Matrix3d::Zero();
+    // J(Eigen::seqN(3, 3), Eigen::seqN(9, 3)) = (J_x2dotmx1dot_x2dot).eval();
+    
     Eigen::VectorXd res = -h; // [0] - h
     return {res, J};            
 }   
